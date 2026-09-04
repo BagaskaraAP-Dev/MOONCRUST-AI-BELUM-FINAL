@@ -13,7 +13,8 @@ const S = {
   convs: [],
   curId: null,
   busy: false,
-  tokens: 0
+  tokens: 0,
+  pendingImage: null  // { base64, mimeType }
 };
 
 // DOM
@@ -33,7 +34,66 @@ const D = {
   previewModal: el('#previewModal'),
   previewFrame: el('#previewFrame'),
   closePreview: el('#closePreview'),
+  imageInput:   el('#imageInput'),
+  imagePreview: el('#imagePreview'),
+  previewImg:   el('#previewImg'),
+  removeImage:  el('#removeImage'),
 };
+
+// ===== IMAGE HANDLING =====
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2MB (Vercel body limit is 4.5MB, base64 expands ~33%)
+
+function compressImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        // Always compress through canvas to enforce size limit
+        const canvas = document.createElement('canvas');
+        let w = img.width, h = img.height;
+        const maxDim = 1200;
+        if (w > maxDim || h > maxDim) {
+          const ratio = Math.min(maxDim / w, maxDim / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        // Try progressively lower quality until under limit
+        for (let q = 0.8; q >= 0.3; q -= 0.1) {
+          const dataUrl = canvas.toDataURL('image/jpeg', q);
+          const b64 = dataUrl.split(',')[1];
+          if (b64.length * 0.75 <= MAX_IMAGE_BYTES) {
+            resolve({ base64: b64, mimeType: 'image/jpeg' });
+            return;
+          }
+        }
+        // Last resort: lowest quality
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.3);
+        resolve({ base64: dataUrl.split(',')[1], mimeType: 'image/jpeg' });
+      };
+      img.onerror = () => reject(new Error('Gagal memuat gambar'));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error('Gagal membaca file'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function showImagePreview(base64, mimeType) {
+  D.previewImg.src = `data:${mimeType};base64,${base64}`;
+  D.imagePreview.classList.add('show');
+}
+
+function clearImagePreview() {
+  S.pendingImage = null;
+  D.imagePreview.classList.remove('show');
+  D.previewImg.src = '';
+  if (D.imageInput) D.imageInput.value = '';
+}
 
 // ===== PERSISTENCE =====
 function save() {
@@ -139,7 +199,7 @@ function renderChat(c) {
   scrollEnd();
 }
 
-function appendMsg(m) {
+function appendMsg(m, imageDataUrl) {
   const row = document.createElement('div');
   row.className = `msg ${m.role === 'user' ? 'user' : 'ai'}`;
   row.id = m.id;
@@ -147,6 +207,7 @@ function appendMsg(m) {
   const avatar = m.role === 'user' ? 'U' : '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>';
   const name = m.role === 'user' ? 'You' : 'Mooncrust';
   const t = new Date(m.ts || Date.now()).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  const imgHtml = imageDataUrl ? `<img class="msg__image" src="${imageDataUrl}" alt="Uploaded" />` : '';
 
   row.innerHTML = `
     <div class="msg__avatar">${avatar}</div>
@@ -156,6 +217,7 @@ function appendMsg(m) {
         <span class="msg__time">${t}</span>
       </div>
       <div class="msg__text markdown-body">${m.role === 'user' ? esc(m.content) : renderMd(m.content)}</div>
+      ${imgHtml}
       <div class="msg__actions">
         <button class="msg-act-btn" onclick="copyMsg('${m.id}')">📋 Copy</button>
       </div>
@@ -216,63 +278,94 @@ window.copyMsg = function(id) {
   if (m) navigator.clipboard.writeText(m.content);
 };
 
-// ===== SEND + AI =====
+// ===== SEND + AI (SSE STREAMING) =====
+let currentAbort = null; // AbortController for current request
+
 async function send() {
   const txt = D.input.value.trim();
-  if (!txt || S.busy) return;
+  const hasImage = !!S.pendingImage;
+  if ((!txt && !hasImage) || S.busy) return;
 
   if (!S.curId) newConv();
   const c = getCur();
 
   if (c.msgs.length === 0) {
-    c.title = txt.length > 35 ? txt.slice(0, 35) + '…' : txt;
+    const titleTxt = txt || '📷 Foto';
+    c.title = titleTxt.length > 35 ? titleTxt.slice(0, 35) + '…' : titleTxt;
     renderHistory();
   }
 
-  const userMsg = { id: 'u_' + Date.now(), role: 'user', content: txt, ts: Date.now() };
+  const userMsg = { id: 'u_' + Date.now(), role: 'user', content: txt || '📷 Analisa foto ini', ts: Date.now() };
+  const imageForApi = hasImage ? { ...S.pendingImage } : null;
+  const imageDataUrl = hasImage ? `data:${S.pendingImage.mimeType};base64,${S.pendingImage.base64}` : null;
+  if (hasImage) userMsg.hasImage = true;
   c.msgs.push(userMsg);
   save();
 
   D.welcome.style.display = 'none';
   D.chat.classList.add('show');
-  appendMsg(userMsg);
+  appendMsg(userMsg, imageDataUrl);
   scrollEnd();
 
+  clearImagePreview();
   D.input.value = '';
   D.input.style.height = 'auto';
   S.busy = true;
 
-  // Typing indicator
-  const typingId = 'typing_' + Date.now();
-  const typingEl = document.createElement('div');
-  typingEl.className = 'msg ai';
-  typingEl.id = typingId;
-  typingEl.innerHTML = `
+  // Create streaming response message placeholder
+  const aiMsgId = 'a_' + Date.now();
+  const aiRow = document.createElement('div');
+  aiRow.className = 'msg ai';
+  aiRow.id = aiMsgId;
+  aiRow.innerHTML = `
     <div class="msg__avatar"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></div>
     <div class="msg__body">
-      <div class="msg__head"><span class="msg__name">Mooncrust Thinking...</span></div>
-      <div class="msg__text"><div class="typing"><div class="typing__dot"></div><div class="typing__dot"></div><div class="typing__dot"></div></div></div>
+      <div class="msg__head">
+        <span class="msg__name">Mooncrust</span>
+        <span class="msg__time">${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>
+      </div>
+      <div class="msg__text markdown-body"><div class="typing"><div class="typing__dot"></div><div class="typing__dot"></div><div class="typing__dot"></div></div></div>
+      <div class="msg__actions">
+        <button class="msg-act-btn msg-act-btn--stop" id="stopBtn">⏹ Stop</button>
+      </div>
     </div>
   `;
-  D.messages.appendChild(typingEl);
+  D.messages.appendChild(aiRow);
   scrollEnd();
 
+  // Setup AbortController
+  currentAbort = new AbortController();
+  const stopBtn = document.getElementById('stopBtn');
+  if (stopBtn) {
+    stopBtn.addEventListener('click', () => {
+      if (currentAbort) currentAbort.abort();
+    });
+  }
+
   const selectedModel = document.getElementById('modelSelect').value || 'mc-pro';
+  let fullText = '';
 
   try {
+    const reqBody = {
+      messages: c.msgs.map(m => ({ role: m.role, content: m.content })),
+      model: selectedModel,
+      stream: true
+    };
+    if (imageForApi) {
+      reqBody.image = imageForApi;
+    }
+
     const resp = await fetch('/api/chat', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
         'x-mc-token': window.MC_TOKEN
       },
-      body: JSON.stringify({
-        messages: c.msgs.map(m => ({ role: m.role, content: m.content })),
-        model: selectedModel
-      })
+      body: JSON.stringify(reqBody),
+      signal: currentAbort.signal
     });
 
-    // Cek 401 langsung dari HTTP status — tidak bergantung pada teks pesan
+    // Auth check
     if (resp.status === 401) {
       sessionStorage.removeItem('mc_token');
       window.MC_TOKEN = '';
@@ -281,33 +374,92 @@ async function send() {
       throw new Error('PIN salah atau kedaluwarsa.');
     }
 
-    const raw = await resp.text();
-    let data;
-    try {
-      data = JSON.parse(raw);
-    } catch {
-      throw new Error(`Server balas non-JSON (HTTP ${resp.status}): ${raw.slice(0, 150)}`);
+    if (!resp.ok && resp.headers.get('content-type')?.includes('application/json')) {
+      const errData = await resp.json();
+      throw new Error(errData.error || `HTTP ${resp.status}`);
     }
 
-    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
+    // Read SSE stream — render plain text while streaming, markdown at end
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    const textEl = aiRow.querySelector('.msg__text');
 
-    const aiText = data.choices?.[0]?.message?.content || 'Tidak ada respons.';
-    const aiMsg = { id: 'a_' + Date.now(), role: 'assistant', content: aiText, ts: Date.now() };
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6).trim();
+        if (payload === '[DONE]') continue;
+
+        try {
+          const chunk = JSON.parse(payload);
+          if (chunk.error) throw new Error(chunk.error);
+          if (chunk.text) {
+            fullText += chunk.text;
+            // Plain text during streaming — no markdown parse, no DOMPurify
+            textEl.textContent = fullText;
+            scrollEnd();
+          }
+        } catch (parseErr) {
+          if (parseErr.message && !parseErr.message.includes('JSON')) {
+            throw parseErr;
+          }
+        }
+      }
+    }
+
+    // Finalize: single markdown pass + single enhanceCode pass
+    if (!fullText) fullText = 'Tidak ada respons.';
+    textEl.innerHTML = renderMd(fullText);
+    enhanceCode(aiRow);
+
+    // Save to conversation
+    const aiMsg = { id: aiMsgId, role: 'assistant', content: fullText, ts: Date.now() };
     c.msgs.push(aiMsg);
-
-    S.tokens += (data.usage?.total_tokens || (txt.length + aiText.length));
+    S.tokens += (txt.length + fullText.length);
     save();
 
-    typingEl.remove();
-    appendMsg(aiMsg);
-    scrollEnd();
+    // Replace stop button with copy button
+    const actionsEl = aiRow.querySelector('.msg__actions');
+    if (actionsEl) {
+      actionsEl.innerHTML = `<button class="msg-act-btn" onclick="copyMsg('${aiMsgId}')">📋 Copy</button>`;
+    }
+
   } catch (err) {
-    typingEl.querySelector('.msg__text').innerHTML = `
-      <p style="color:#ef4444;font-weight:600;">⚠️ ${esc(err.message)}</p>
-    `;
+    const textEl = aiRow.querySelector('.msg__text');
+    if (err.name === 'AbortError') {
+      // User pressed Stop
+      if (fullText) {
+        textEl.innerHTML = renderMd(fullText + '\n\n---\n*⏹ Dihentikan oleh pengguna*');
+        enhanceCode(aiRow);
+        const aiMsg = { id: aiMsgId, role: 'assistant', content: fullText, ts: Date.now() };
+        c.msgs.push(aiMsg);
+        save();
+      } else {
+        textEl.innerHTML = `<p style="color:var(--text3);font-style:italic;">⏹ Dihentikan sebelum ada jawaban.</p>`;
+      }
+    } else {
+      textEl.innerHTML = `<p style="color:#ef4444;font-weight:600;">⚠️ ${esc(err.message)}</p>`;
+    }
+    // Replace stop with copy anyway
+    const actionsEl = aiRow.querySelector('.msg__actions');
+    if (actionsEl && fullText) {
+      actionsEl.innerHTML = `<button class="msg-act-btn" onclick="copyMsg('${aiMsgId}')">📋 Copy</button>`;
+    } else if (actionsEl) {
+      actionsEl.innerHTML = '';
+    }
   } finally {
+    currentAbort = null;
     S.busy = false;
     D.input.focus();
+    scrollEnd();
   }
 }
 
@@ -350,6 +502,32 @@ function init() {
     D.previewModal.classList.remove('show');
     D.previewFrame.srcdoc = '';
   });
+
+  // Image upload handlers
+  if (D.imageInput) {
+    D.imageInput.addEventListener('change', async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+        alert('Hanya file gambar yang diizinkan.');
+        D.imageInput.value = '';
+        return;
+      }
+      try {
+        const compressed = await compressImage(file);
+        S.pendingImage = compressed;
+        showImagePreview(compressed.base64, compressed.mimeType);
+        D.input.focus();
+      } catch (err) {
+        alert('Gagal memproses gambar: ' + err.message);
+        D.imageInput.value = '';
+      }
+    });
+  }
+
+  if (D.removeImage) {
+    D.removeImage.addEventListener('click', clearImagePreview);
+  }
 
   // Lock screen logic
   const pinInput = document.getElementById('pinInput');

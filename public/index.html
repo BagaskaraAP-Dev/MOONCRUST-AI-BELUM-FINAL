@@ -2,9 +2,10 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MOONCRUST CHATBOT</title>
-  <meta name="description" content="MOONCRUST CHATBOT — Advanced AI Assistant. Your personal coding intelligence.">
+  <meta name="description" content="Mooncrust — Asisten AI harian untuk semua kebutuhanmu.">
+  <meta name="theme-color" content="#212121">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -39,7 +40,7 @@
         </div>
         <div>
           <div class="brand-name">
-            MOONCRUST <span class="badge-tag">WEB DEV</span>
+            MOONCRUST <span class="badge-tag">AI</span>
           </div>
           <div class="brand-status"><span class="dot-live"></span>System Active</div>
         </div>
@@ -56,10 +57,10 @@
         <div class="model-select-wrapper">
           <span class="model-badge__dot"></span>
           <select id="modelSelect" class="model-select">
-            <option value="mc-noob">Mooncrust Noob</option>
-            <option value="mc-pro" selected>Mooncrust Pro</option>
-            <option value="mc-expert">Mooncrust Expert</option>
-            <option value="mc-advance">Mooncrust Advance (Hard)</option>
+            <option value="mc-noob">⚡ Cepat</option>
+            <option value="mc-pro" selected>🧠 Standar</option>
+            <option value="mc-expert">🔬 Mendalam</option>
+            <option value="mc-advance">🚀 Maksimal</option>
           </select>
         </div>
       </div>
@@ -72,7 +73,7 @@
         <button class="topbar__menu" id="menuBtn">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
-        <span class="topbar__title">MOONCRUST <span class="badge-tag">WEB DEV</span></span>
+        <span class="topbar__title">MOONCRUST <span class="badge-tag">AI</span></span>
         <div style="width:36px"></div>
       </div>
 
@@ -80,9 +81,9 @@
       <section class="welcome" id="welcome">
         <h1 class="welcome__title">
           MOONCRUST
-          <div class="welcome__subtitle">WEB DEV INTELLIGENCE</div>
+          <div class="welcome__subtitle">YOUR DAILY AI</div>
         </h1>
-        <p class="welcome__desc">Ready to build something extraordinary.</p>
+        <p class="welcome__desc">Tanya apa saja, kirim foto, selesaikan tugasmu.</p>
       </section>
 
       <!-- Chat Messages -->
@@ -92,8 +93,17 @@
 
       <!-- Input -->
       <div class="composer">
+        <!-- Image Preview -->
+        <div class="composer__preview" id="imagePreview">
+          <img id="previewImg" alt="Preview" />
+          <button class="composer__preview-remove" id="removeImage" title="Hapus gambar">✕</button>
+        </div>
         <div class="composer__box">
-          <textarea id="input" rows="1" placeholder="Tanya Mooncrust apa saja..."></textarea>
+          <label class="composer__attach" for="imageInput" title="Kirim Foto">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          </label>
+          <input type="file" id="imageInput" accept="image/*" hidden />
+          <textarea id="input" rows="1" placeholder="Ketik pesan atau kirim foto..."></textarea>
           <button class="composer__send" id="sendBtn">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </button>

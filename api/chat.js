@@ -1,20 +1,21 @@
 /**
  * api/chat.js - Mooncrust AI Vercel Serverless Function
- * Security: Fail-closed auth, constant-time comparison, payload limits, strict timeouts
+ * SSE Streaming, multimodal (image), fail-closed auth, timing-safe comparison
  */
 
 import { timingSafeEqual } from 'node:crypto';
 
 const MODEL_MAP = {
   'mc-noob':    { id: 'gemini-3.5-flash', maxOut: 4096,  think: 'minimal', keyEnv: 'GEMINI_KEY_1' },
-  'mc-pro':     { id: 'gemini-3.6-flash', maxOut: 8192,  think: 'low',     keyEnv: 'GEMINI_KEY_2' },
-  'mc-expert':  { id: 'gemini-3.7-flash', maxOut: 8192,  think: 'medium',  keyEnv: 'GEMINI_KEY_3' },
+  'mc-pro':     { id: 'gemini-3.6-flash', maxOut: 6144,  think: 'minimal', keyEnv: 'GEMINI_KEY_2' },
+  'mc-expert':  { id: 'gemini-3.7-flash', maxOut: 8192,  think: 'low',     keyEnv: 'GEMINI_KEY_3' },
   'mc-advance': { id: 'gemini-3.7-flash', maxOut: 12288, think: 'medium',  keyEnv: 'GEMINI_KEY_4' },
 };
 
 const DEFAULT_ALIAS = 'mc-pro';
-const UPSTREAM_TIMEOUT_MS = 25000;
+const UPSTREAM_TIMEOUT_MS = 55000;
 const MAX_CHARS = 12000;
+const MAX_IMAGE_B64_LEN = 2_800_000; // ~2.1MB raw after base64 decode
 
 function safeEq(a, b) {
   const A = Buffer.from(String(a || ''));
@@ -28,15 +29,17 @@ function buildSystemPrompt() {
     .toLocaleString('en-GB', { timeZone: 'Asia/Jakarta' })
     .replace(',', '');
 
-  return `You are Mooncrust, a Senior Staff Software Engineer and Full-Stack Architect.
+  return `You are Mooncrust, a smart and friendly AI assistant for daily life.
 
 IDENTITY
 - Your name is Mooncrust. You were built by Bagaskara Amukti Palapa in Sumatera Selatan, Ogan Komering Ulu Timur, Buay Madang, Kurungan Nyawa, and you are still being developed. When asked about your origin, always state the location in this exact order: Provinsi (Sumatera Selatan), Kabupaten (Ogan Komering Ulu Timur), Kecamatan (Buay Madang), Desa (Kurungan Nyawa).
-- Do not discuss internal implementation details: which vendor, model family, or infrastructure powers you. If asked, say that is not something you discuss, and steer back to the user's actual problem. Do not invent a false answer either.
+- Do not discuss internal implementation details: which vendor, model family, or infrastructure powers you. If asked, say that is not something you discuss. Do not invent a false answer either.
 
 BEHAVIOUR
-- Answer directly and precisely. Do not ramble or pivot to unrelated topics.
-- Keep answers reasonably concise. Do not pad.
+- Be helpful for ANYTHING: homework, daily tasks, photo analysis, writing, translation, math, general knowledge, coding, creative work, and more.
+- Answer directly and concisely. Get to the point immediately. Use short paragraphs.
+- Avoid unnecessary filler words, disclaimers, or padding. Be efficient.
+- If the user sends an image, analyze it thoroughly and respond helpfully.
 - Current date/time in Asia/Jakarta: ${now}. Use format DD/MM/YYYY HH:MM when asked.
 - Always format responses with clean Markdown.
 - Reply in the same language the user writes in.`;
@@ -101,6 +104,17 @@ export default async function handler(req, res) {
     return res.status(413).json({ error: 'Percakapan terlalu panjang. Mulai chat baru.' });
   }
 
+  // 5. Validasi gambar jika ada
+  const image = body.image; // { base64, mimeType }
+  if (image) {
+    if (!image.base64 || !image.mimeType) {
+      return res.status(400).json({ error: 'Format gambar tidak valid.' });
+    }
+    if (image.base64.length > MAX_IMAGE_B64_LEN) {
+      return res.status(413).json({ error: 'Gambar terlalu besar. Maksimal 2MB.' });
+    }
+  }
+
   const key = process.env[cfg.keyEnv] || process.env.GEMINI_KEY_1;
   if (!key) {
     return res.status(500).json({ error: `Kunci untuk mode ini belum di-set (${cfg.keyEnv}). [E-NOKEY]` });
@@ -109,78 +123,179 @@ export default async function handler(req, res) {
   const generationConfig = { maxOutputTokens: cfg.maxOut };
   if (cfg.think) generationConfig.thinkingConfig = { thinkingLevel: cfg.think };
 
+  // Build contents with optional image in the last user message
+  const contents = trimmed.map((m, i) => {
+    const parts = [{ text: String(m.content ?? '') }];
+    // Attach image to the last user message only
+    if (image && m.role === 'user' && i === trimmed.length - 1) {
+      parts.push({
+        inlineData: { mimeType: image.mimeType, data: image.base64 }
+      });
+    }
+    return {
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts,
+    };
+  });
+
+  // Check if client wants streaming
+  const wantStream = body.stream !== false; // default: stream
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
 
   try {
-    const upstreamRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${cfg.id}:generateContent`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-        body: JSON.stringify({
-          contents: trimmed.map((m) => ({
-            role: m.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: String(m.content ?? '') }],
-          })),
-          systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
-          generationConfig,
-        }),
-        signal: controller.signal,
+    if (wantStream) {
+      // ===== SSE STREAMING MODE =====
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+
+      const upstreamRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${cfg.id}:streamGenerateContent?alt=sse`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+          body: JSON.stringify({
+            contents,
+            systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
+            generationConfig,
+          }),
+          signal: controller.signal,
+        }
+      );
+
+      clearTimeout(timeoutId);
+
+      if (!upstreamRes.ok) {
+        const errText = await upstreamRes.text().catch(() => '');
+        let errMsg = `Permintaan ditolak (E-${upstreamRes.status}).`;
+        if (upstreamRes.status === 429) errMsg = 'Kuota sedang habis. Coba lagi sebentar lagi.';
+        if (upstreamRes.status === 404) errMsg = 'Mode ini tidak tersedia. [E-404]';
+        res.write(`data: ${JSON.stringify({ error: errMsg })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        return res.end();
       }
-    );
 
-    clearTimeout(timeoutId);
+      // Stream chunks from Gemini → SSE to client
+      const reader = upstreamRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-    const rText = await upstreamRes.text();
-    let data;
-    try {
-      data = JSON.parse(rText);
-    } catch {
-      return res.status(502).json({ error: `Layanan model menolak permintaan (E-${upstreamRes.status}).` });
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr || jsonStr === '[DONE]') continue;
+
+          try {
+            const chunk = JSON.parse(jsonStr);
+            const text = (chunk.candidates?.[0]?.content?.parts || [])
+              .filter((p) => p && typeof p.text === 'string' && !p.thought)
+              .map((p) => p.text)
+              .join('');
+
+            if (text) {
+              res.write(`data: ${JSON.stringify({ text })}\n\n`);
+            }
+          } catch {
+            // skip malformed chunks
+          }
+        }
+      }
+
+      res.write('data: [DONE]\n\n');
+      return res.end();
+
+    } else {
+      // ===== NON-STREAMING FALLBACK =====
+      const upstreamRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${cfg.id}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+          body: JSON.stringify({
+            contents,
+            systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
+            generationConfig,
+          }),
+          signal: controller.signal,
+        }
+      );
+
+      clearTimeout(timeoutId);
+
+      const rText = await upstreamRes.text();
+      let data;
+      try {
+        data = JSON.parse(rText);
+      } catch {
+        return res.status(502).json({ error: `Layanan model menolak permintaan (E-${upstreamRes.status}).` });
+      }
+
+      if (!upstreamRes.ok) {
+        if (upstreamRes.status === 429) return res.status(429).json({ error: 'Kuota sedang habis. Coba lagi sebentar lagi.' });
+        if (upstreamRes.status === 404) return res.status(502).json({ error: 'Mode ini tidak tersedia untuk akun server. [E-404]' });
+        const detail = scrub(data?.error?.message || '');
+        return res.status(502).json({ error: `Permintaan ditolak (E-${upstreamRes.status}). ${detail}` });
+      }
+
+      const cand = data.candidates?.[0];
+      const finish = cand?.finishReason || '';
+      const usage = data.usageMetadata || {};
+
+      const text = (cand?.content?.parts || [])
+        .filter((p) => p && typeof p.text === 'string' && !p.thought)
+        .map((p) => p.text)
+        .join('')
+        .trim();
+
+      if (text) {
+        return res.status(200).json({
+          id: 'mc_' + Date.now(),
+          model: alias,
+          truncated: finish === 'MAX_TOKENS',
+          choices: [{ message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
+          usage,
+        });
+      }
+
+      if (finish === 'MAX_TOKENS') {
+        const thoughts = usage.thoughtsTokenCount ?? '?';
+        return res.status(502).json({
+          error: `Jatah token habis dipakai berpikir (${thoughts} token) sebelum sempat menjawab. [E-MAXTOK]`,
+        });
+      }
+
+      return res.status(502).json({ error: `Tidak ada jawaban dihasilkan (${finish || 'tidak diketahui'}). [E-EMPTY]` });
     }
-
-    if (!upstreamRes.ok) {
-      if (upstreamRes.status === 429) return res.status(429).json({ error: 'Kuota sedang habis. Coba lagi sebentar lagi.' });
-      if (upstreamRes.status === 404) return res.status(502).json({ error: 'Mode ini tidak tersedia untuk akun server. [E-404]' });
-      const detail = scrub(data?.error?.message || '');
-      return res.status(502).json({ error: `Permintaan ditolak (E-${upstreamRes.status}). ${detail}` });
-    }
-
-    const cand = data.candidates?.[0];
-    const finish = cand?.finishReason || '';
-    const usage = data.usageMetadata || {};
-
-    const text = (cand?.content?.parts || [])
-      .filter((p) => p && typeof p.text === 'string' && !p.thought)
-      .map((p) => p.text)
-      .join('')
-      .trim();
-
-    if (text) {
-      return res.status(200).json({
-        id: 'mc_' + Date.now(),
-        model: alias,
-        truncated: finish === 'MAX_TOKENS',
-        choices: [{ message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
-        usage,
-      });
-    }
-
-    if (finish === 'MAX_TOKENS') {
-      const thoughts = usage.thoughtsTokenCount ?? '?';
-      return res.status(502).json({
-        error: `Jatah token habis dipakai berpikir (${thoughts} token) sebelum sempat menjawab. [E-MAXTOK]`,
-      });
-    }
-
-    return res.status(502).json({ error: `Tidak ada jawaban dihasilkan (${finish || 'tidak diketahui'}). [E-EMPTY]` });
   } catch (err) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      return res.status(504).json({ error: 'Permintaan timeout (melebihi batas 25 detik). [E-TIMEOUT]' });
+      const msg = 'Permintaan timeout. [E-TIMEOUT]';
+      if (wantStream) {
+        res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      }
+      return res.status(504).json({ error: msg });
     }
     console.error('[vercel-api] gagal', err);
-    return res.status(502).json({ error: 'Gagal memproses permintaan.' });
+    const msg = 'Gagal memproses permintaan.';
+    if (wantStream) {
+      try {
+        res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
+        res.write('data: [DONE]\n\n');
+        return res.end();
+      } catch { /* headers already sent */ }
+    }
+    return res.status(502).json({ error: msg });
   }
 }
