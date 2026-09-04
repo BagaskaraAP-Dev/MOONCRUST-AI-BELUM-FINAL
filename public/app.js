@@ -184,36 +184,8 @@ function renderHistory() {
   });
 }
 
-// ===== DISPLAY & GREETING =====
-function updateGreeting() {
-  const now = new Date();
-  const hrs = now.getHours();
-  const mins = String(now.getMinutes()).padStart(2, '0');
-  const jam = `${String(hrs).padStart(2, '0')}:${mins}`;
-
-  let waktu = 'malam';
-  if (hrs >= 4 && hrs < 11) {
-    waktu = 'pagi';
-  } else if (hrs >= 11 && hrs < 15) {
-    waktu = 'siang';
-  } else if (hrs >= 15 && hrs < 18) {
-    waktu = 'sore';
-  } else {
-    waktu = 'malam';
-  }
-
-  const descEl = document.getElementById('welcomeDesc');
-  if (descEl) {
-    descEl.textContent = `Halo selamat ${waktu} (${jam}), ada yang bisa aku bantu?`;
-  }
-  const subEl = document.getElementById('welcomeSubtitle');
-  if (subEl) {
-    subEl.textContent = `SELAMAT ${waktu.toUpperCase()} • YOUR DAILY AI`;
-  }
-}
-
+// ===== DISPLAY =====
 function showWelcome() {
-  updateGreeting();
   D.welcome.style.display = 'flex';
   D.chat.classList.remove('show');
   D.messages.innerHTML = '';
