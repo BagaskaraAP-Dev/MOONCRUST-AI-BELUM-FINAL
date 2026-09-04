@@ -1,0 +1,3 @@
+# Situs pribadi — jangan diindeks.
+User-agent: *
+Disallow: /

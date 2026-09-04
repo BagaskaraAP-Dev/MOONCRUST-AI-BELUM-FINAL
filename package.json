@@ -1,0 +1,28 @@
+{
+  "name": "mooncrust-dev",
+  "version": "1.0.0",
+  "description": "Mooncrust-DEV — Intelligent AI Assistant and Full-Stack Coding LLM Suite",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "ai",
+    "llm",
+    "mooncrust-dev",
+    "coding-assistant",
+    "gemini",
+    "groq",
+    "ollama"
+  ],
+  "author": "Mooncrust Team",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "serverless-http": "^4.0.0"
+  }
+}
