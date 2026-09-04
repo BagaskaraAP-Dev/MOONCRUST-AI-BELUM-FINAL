@@ -115,9 +115,9 @@ export default async function handler(req, res) {
     }
   }
 
-  const key = process.env[cfg.keyEnv] || process.env.GEMINI_KEY_1;
+  const key = process.env[cfg.keyEnv] || process.env.GEMINI_KEY_1 || process.env.GEMINI_API_KEY;
   if (!key) {
-    return res.status(500).json({ error: `Kunci untuk mode ini belum di-set (${cfg.keyEnv}). [E-NOKEY]` });
+    return res.status(500).json({ error: `Kunci untuk mode ini belum di-set (${cfg.keyEnv} / GEMINI_KEY_1). [E-NOKEY]` });
   }
 
   const generationConfig = { maxOutputTokens: cfg.maxOut };
