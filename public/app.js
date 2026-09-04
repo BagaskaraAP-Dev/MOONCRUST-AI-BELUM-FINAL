@@ -45,12 +45,12 @@ function save() {
 }
 
 function load() {
-  let token = localStorage.getItem('mc_token');
+  let token = sessionStorage.getItem('mc_token');
   if (token) {
     window.MC_TOKEN = token;
     document.getElementById('lockScreen').classList.remove('show');
   } else {
-    // Show lock screen if not authenticated
+    // Selalu tampilkan lock screen jika belum login di sesi ini
     document.getElementById('lockScreen').classList.add('show');
   }
     
@@ -274,7 +274,7 @@ async function send() {
 
     // Cek 401 langsung dari HTTP status — tidak bergantung pada teks pesan
     if (resp.status === 401) {
-      localStorage.removeItem('mc_token');
+      sessionStorage.removeItem('mc_token');
       window.MC_TOKEN = '';
       document.getElementById('lockScreen').classList.add('show');
       document.getElementById('pinError').textContent = 'PIN salah, coba lagi.';
@@ -358,7 +358,7 @@ function init() {
   
   const submitPin = async () => {
     const val = pinInput.value.trim();
-    if (!val) { pinError.textContent = 'PIN tidak boleh kosong'; return; }
+    if (!val) { pinError.textContent = 'Token tidak boleh kosong'; return; }
 
     pinError.textContent = 'Memeriksa…';
     pinBtn.disabled = true;
@@ -370,13 +370,17 @@ function init() {
       });
 
       if (r.status === 401) {
-        pinError.textContent = 'PIN salah.';
+        pinError.textContent = 'Token salah. Akses ditolak.';
         pinInput.value = '';
         pinInput.focus();
         return;
       }
+      if (r.status === 503) {
+        pinError.textContent = 'Server belum dikonfigurasi (APP_SECRET kosong).';
+        return;
+      }
 
-      localStorage.setItem('mc_token', val);
+      sessionStorage.setItem('mc_token', val);
       window.MC_TOKEN = val;
       document.getElementById('lockScreen').classList.remove('show');
       pinError.textContent = '';
