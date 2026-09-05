@@ -35,9 +35,17 @@
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
 
-html { font-size: 15px; }
+html {
+  font-size: 15px;
+  height: 100%;
+}
 
 body {
   font-family: var(--font);
@@ -45,15 +53,16 @@ body {
   color: var(--text);
   height: 100vh;
   height: 100dvh;
+  min-height: -webkit-fill-available;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  touch-action: manipulation;
 }
 
-::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 99px; }
 ::selection { background: rgba(139,92,246,0.3); }
-
-
 
 /* LAYOUT */
 .app {
@@ -62,6 +71,9 @@ body {
   display: flex;
   height: 100vh;
   height: 100dvh;
+  min-height: -webkit-fill-available;
+  width: 100%;
+  overflow: hidden;
 }
 
 /* ================== SIDEBAR ================== */
@@ -70,13 +82,15 @@ body {
   min-width: var(--sidebar-w);
   background: var(--bg-panel);
   backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  padding: 20px 14px 14px;
-  gap: 16px;
-  transition: transform 0.35s var(--ease);
+  padding: max(20px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  gap: 14px;
+  transition: transform 0.3s var(--ease);
   z-index: 100;
+  will-change: transform;
 }
 
 .sidebar__brand {
@@ -276,8 +290,10 @@ body {
   flex-direction: column;
   height: 100vh;
   height: 100dvh;
+  min-height: -webkit-fill-available;
   position: relative;
   overflow: hidden;
+  min-width: 0;
 }
 
 /* Mobile Topbar */
@@ -285,10 +301,13 @@ body {
   display: none;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: max(10px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 10px max(14px, env(safe-area-inset-left));
   background: var(--bg-panel);
   backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  z-index: 20;
 }
 
 .topbar__menu {
@@ -296,16 +315,22 @@ body {
   border: none;
   color: #fff;
   cursor: pointer;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 8px;
+  transition: background 0.2s;
+}
+.topbar__menu:active {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .topbar__title {
   font-weight: 800;
   font-size: 15px;
+  letter-spacing: 0.5px;
 }
 .topbar__title span {
   background: var(--grad);
@@ -318,16 +343,17 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
   color: #fff;
   cursor: pointer;
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
 }
-.topbar__act:hover {
+.topbar__act:active {
   background: rgba(255, 255, 255, 0.15);
+  transform: scale(0.96);
 }
 
 /* ================== WELCOME ================== */
@@ -447,6 +473,8 @@ body {
 .chat {
   flex: 1;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
   display: none;
   scroll-behavior: smooth;
 }
@@ -455,10 +483,10 @@ body {
 .chat__messages {
   max-width: 780px;
   margin: 0 auto;
-  padding: 28px 24px 100px;
+  padding: 24px 20px calc(110px + env(safe-area-inset-bottom));
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 22px;
 }
 
 /* Message Row */
@@ -676,9 +704,14 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 12px 24px 18px;
-  background: linear-gradient(to top, var(--bg) 65%, transparent);
+  padding: 8px max(16px, env(safe-area-inset-right)) max(12px, calc(8px + env(safe-area-inset-bottom))) max(16px, env(safe-area-inset-left));
+  background: linear-gradient(to top, var(--bg) 75%, transparent);
   z-index: 10;
+  pointer-events: none;
+}
+
+.composer__box, .composer__preview {
+  pointer-events: auto;
 }
 
 .composer__box {
@@ -920,7 +953,7 @@ body {
 
 /* ================== RESPONSIVE ================== */
 
-/* --- Mobile (up to 768px) --- */
+/* --- Mobile (up to 768px - Phones 9:16, 20:9, foldables, iOS, Android) --- */
 @media (max-width: 768px) {
   html { font-size: 14px; }
 
@@ -929,69 +962,150 @@ body {
     left: 0;
     top: 0;
     bottom: 0;
-    width: 280px;
-    min-width: 280px;
-    transform: translateX(-100%);
-    box-shadow: 8px 0 30px rgba(0,0,0,0.5);
+    width: min(85vw, 300px);
+    min-width: min(85vw, 300px);
+    transform: translate3d(-100%, 0, 0);
+    box-shadow: 12px 0 40px rgba(0,0,0,0.6);
   }
-  .sidebar.open { transform: translateX(0); }
+  .sidebar.open { transform: translate3d(0, 0, 0); }
 
   .topbar { display: flex; }
 
-  .welcome { padding: 24px 16px; }
-  .welcome__title { font-size: clamp(24px, 8vw, 36px); }
+  .welcome {
+    padding: max(20px, env(safe-area-inset-top)) 16px calc(90px + env(safe-area-inset-bottom));
+    justify-content: flex-start;
+    padding-top: max(40px, 12vh);
+  }
+  .welcome__title { font-size: clamp(28px, 8vw, 38px); }
   .welcome__subtitle { font-size: 11px; letter-spacing: 1.5px; }
-  .welcome__desc { font-size: 14px; margin-bottom: 20px; }
+  .welcome__desc { font-size: 14px; margin-bottom: 18px; max-width: 90%; }
+
+  .welcome__suggestions {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    width: 100%;
+    max-width: 440px;
+  }
+  .sugg-card {
+    padding: 12px 14px;
+    min-height: 52px;
+  }
+  .sugg-card:active {
+    background: rgba(255,255,255,0.1);
+    transform: scale(0.98);
+  }
 
   .chat__messages { 
-    padding: 14px 12px 120px;
-    gap: 18px;
+    padding: 14px 14px calc(95px + env(safe-area-inset-bottom));
+    gap: 16px;
   }
 
   .msg { gap: 10px; }
-  .msg__avatar { width: 30px; height: 30px; border-radius: 6px; }
-  .msg__text { font-size: 14px; line-height: 1.7; }
+  .msg__avatar { width: 32px; height: 32px; border-radius: 8px; font-size: 15px; }
+  .msg__text { font-size: 14.5px; line-height: 1.65; }
   .msg__name { font-size: 12px; }
 
-  .code-wrap pre { padding: 12px; }
-  .code-wrap code { font-size: 12px !important; }
-  .code-bar { padding: 5px 10px; }
-  .code-btn { padding: 3px 7px; font-size: 10px; }
-
-  .composer { padding: 8px 10px 12px; }
-  .composer__box {
-    padding: 6px 8px 6px 14px;
-    border-radius: 14px;
+  .code-wrap {
+    max-width: 100%;
+    margin: 10px 0;
+    border-radius: 10px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
-  .composer__box textarea { font-size: 14px; }
-  .composer__send {
-    width: 38px;
-    height: 38px;
-    min-width: 38px;
-    min-height: 38px;
+  .code-wrap pre { padding: 10px 12px; }
+  .code-wrap code { font-size: 12px !important; }
+  .code-bar { padding: 6px 12px; font-size: 12px; }
+  .code-btn { padding: 4px 8px; font-size: 11px; min-height: 30px; }
+
+  .composer {
+    padding: 6px max(10px, env(safe-area-inset-right)) max(10px, calc(6px + env(safe-area-inset-bottom))) max(10px, env(safe-area-inset-left));
+  }
+  .composer__box {
+    padding: 4px 6px 4px 12px;
+    border-radius: 16px;
+    gap: 6px;
+  }
+  /* CRITICAL: 16px font-size prevents iOS Safari from auto-zooming! */
+  .composer__box textarea {
+    font-size: 16px !important;
+    padding: 8px 0;
+  }
+  .composer__attach,
+  .composer__mic {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
     border-radius: 10px;
   }
+  .composer__attach:active,
+  .composer__mic:active {
+    background: rgba(255,255,255,0.12);
+  }
+  .composer__send {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+    border-radius: 10px;
+  }
+  .composer__send:active {
+    transform: scale(0.95);
+  }
 
-  /* Touch targets minimum 44x44 */
+  /* Accessible Touch Targets (Apple & Google Guidelines: min 44x44) */
   .topbar__menu { width: 44px; height: 44px; }
-  .btn-new { padding: 12px; min-height: 44px; }
-  .hist-item { padding: 12px; min-height: 44px; }
-  .hist-item__del { padding: 6px 8px; }
-  .model-select-wrapper { padding: 10px 12px; }
-  .model-select { font-size: 13px; }
+  .topbar__act { width: 42px; height: 42px; }
+  .btn-new { padding: 12px; min-height: 46px; font-size: 14px; }
+  .btn-sidebar-act { padding: 10px 12px; min-height: 42px; font-size: 13px; }
+  .hist-item { padding: 12px; min-height: 46px; font-size: 13.5px; }
+  .hist-item__del { padding: 8px 10px; min-height: 36px; }
+  .model-select-wrapper { padding: 10px 12px; min-height: 46px; }
+  .model-select { font-size: 16px !important; }
 
-  /* Message actions always visible on mobile (no hover) */
-  .msg__actions { opacity: 1; }
+  /* Message actions permanently visible & touch-friendly on mobile */
+  .msg__actions {
+    opacity: 1 !important;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .msg-act-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    min-height: 34px;
+    border-radius: 8px;
+  }
+  .msg-act-btn:active {
+    background: rgba(255,255,255,0.15);
+    transform: scale(0.97);
+  }
 
-  /* Modal full-screen on mobile */
+  /* Full screen preview modal on mobile */
   .modal-overlay { padding: 0; }
-  .modal-frame { max-width: 100%; height: 100vh; height: 100dvh; border-radius: 0; }
+  .modal-frame {
+    max-width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    border-radius: 0;
+    border: none;
+  }
 
   /* Lock screen responsive */
-  .lock-box { padding: 28px 20px; }
+  .lock-box {
+    padding: 28px 20px;
+    border-radius: 20px;
+    width: min(92%, 360px);
+  }
   .lock-box h2 { font-size: 1.3rem; }
-  .lock-box input { padding: 12px 16px; font-size: 0.95rem; }
-  .lock-box button { padding: 12px; }
+  .lock-box input {
+    font-size: 16px !important; /* Prevents iOS auto-zoom */
+    padding: 12px 14px;
+    letter-spacing: 4px;
+  }
+  .lock-box button {
+    min-height: 46px;
+    font-size: 1rem;
+  }
 }
 
 /* --- Small phones (up to 380px) --- */

@@ -661,6 +661,12 @@ function init() {
     D.input.style.height = Math.min(D.input.scrollHeight, 180) + 'px';
   });
 
+  D.input.addEventListener('focus', () => {
+    setTimeout(() => {
+      scrollEnd();
+    }, 320);
+  });
+
   D.btnNew.addEventListener('click', newConv);
 
   if (D.btnExport) {
@@ -677,8 +683,7 @@ function init() {
   initSpeechRecognition();
 
   D.menuBtn.addEventListener('click', () => {
-    D.sidebar.classList.toggle('open');
-    // add overlay
+    const isOpen = D.sidebar.classList.toggle('open');
     let ov = document.querySelector('.sidebar-overlay');
     if (!ov) {
       ov = document.createElement('div');
@@ -686,7 +691,11 @@ function init() {
       document.body.appendChild(ov);
       ov.addEventListener('click', closeSidebar);
     }
-    ov.classList.toggle('show');
+    if (isOpen) {
+      ov.classList.add('show');
+    } else {
+      ov.classList.remove('show');
+    }
   });
 
   D.closePreview.addEventListener('click', () => {
