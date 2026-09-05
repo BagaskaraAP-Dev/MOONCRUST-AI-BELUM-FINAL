@@ -702,18 +702,12 @@ async function send() {
       reqBody.image = imageForApi;
     }
 
-    const customGeminiKey = (localStorage.getItem('mc_custom_gemini_key') || '').trim();
-    const fetchHeaders = { 
-      'Content-Type': 'application/json',
-      'x-mc-token': window.MC_TOKEN
-    };
-    if (customGeminiKey) {
-      fetchHeaders['x-gemini-key'] = customGeminiKey;
-    }
-
     const resp = await fetch('/api/chat', {
       method: 'POST',
-      headers: fetchHeaders,
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-mc-token': window.MC_TOKEN
+      },
       body: JSON.stringify(reqBody),
       signal: currentAbort.signal
     });
@@ -800,34 +794,7 @@ async function send() {
       }
     } else {
       const errMsg = err.message || '';
-      if (errMsg.includes('E-NOKEY') || errMsg.includes('GEMINI_API_KEY') || errMsg.includes('E-KEY-INVALID') || errMsg.includes('API Key') || errMsg.includes('API key')) {
-        textEl.innerHTML = `
-          <div class="api-key-alert">
-            <div class="api-key-alert__title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-              <span>API Key Diperlukan</span>
-            </div>
-            <p class="api-key-alert__desc">
-              ${esc(errMsg)}
-            </p>
-            <div class="api-key-alert__actions">
-              <button type="button" class="btn-input-key-quick" id="btnQuickKeyPrompt">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-1-1l-3 3m2 2l-3 3m-4 1l-1 1a5 5 0 1 1-7-7l1-1m8 8L21 2"/></svg>
-                Atur API Key Sekarang
-              </button>
-              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener" class="btn-get-key-free">
-                Dapatkan Key Gratis (Google AI Studio) &rarr;
-              </a>
-            </div>
-          </div>
-        `;
-        const promptBtn = textEl.querySelector('#btnQuickKeyPrompt');
-        if (promptBtn) {
-          promptBtn.addEventListener('click', () => openApiKeyModal());
-        }
-      } else {
-        textEl.innerHTML = `<p style="color:#ef4444;font-weight:600;">⚠️ ${esc(errMsg)}</p>`;
-      }
+      textEl.innerHTML = `<p style="color:#ef4444;font-weight:600;">⚠️ ${esc(errMsg)}</p>`;
     }
     // Replace stop with copy anyway
     const actionsEl = aiRow.querySelector('.msg__actions');
@@ -1026,156 +993,8 @@ function init() {
     if (e.key === 'Enter') submitPin();
   });
 
-  // ===== API KEY MODAL LOGIC =====
-  initApiKeyManagement();
-
   if (!document.getElementById('lockScreen').classList.contains('show')) {
     D.input.focus();
-  }
-}
-
-// ===== API KEY MANAGEMENT =====
-function getCustomApiKey() {
-  return (localStorage.getItem('mc_custom_gemini_key') || '').trim();
-}
-
-function updateApiKeyUI() {
-  const key = getCustomApiKey();
-  const sideDot = el('#sidebarKeyDot');
-  const modalDot = el('#keyStatusDot');
-  const modalText = el('#keyStatusText');
-
-  if (key) {
-    if (sideDot) sideDot.classList.add('active');
-    if (modalDot) modalDot.classList.add('active');
-    const masked = key.length > 8 ? `${key.slice(0, 6)}...${key.slice(-4)}` : '••••••••';
-    if (modalText) modalText.textContent = `API Key Pribadi Aktif (${masked})`;
-  } else {
-    if (sideDot) sideDot.classList.remove('active');
-    if (modalDot) modalDot.classList.remove('active');
-    if (modalText) modalText.textContent = 'API Key Belum Diatur (Default Server)';
-  }
-}
-
-function openApiKeyModal() {
-  const modal = el('#apiKeyModal');
-  const keyInput = el('#customApiKeyInput');
-  const msg = el('#apiKeyModalMsg');
-  if (msg) {
-    msg.textContent = '';
-    msg.className = 'modal-msg';
-  }
-  updateApiKeyUI();
-  const currentKey = getCustomApiKey();
-  if (keyInput) {
-    keyInput.value = currentKey;
-    keyInput.type = 'password';
-  }
-  const eyeOpen = el('#toggleApiKeyVisibility .eye-open');
-  const eyeClosed = el('#toggleApiKeyVisibility .eye-closed');
-  if (eyeOpen) eyeOpen.style.display = 'block';
-  if (eyeClosed) eyeClosed.style.display = 'none';
-
-  if (modal) {
-    modal.classList.add('show');
-    modal.setAttribute('aria-hidden', 'false');
-  }
-  if (keyInput) keyInput.focus();
-}
-
-function closeApiKeyModal() {
-  const modal = el('#apiKeyModal');
-  if (modal) {
-    modal.classList.remove('show');
-    modal.setAttribute('aria-hidden', 'true');
-  }
-}
-
-function saveCustomApiKey() {
-  const keyInput = el('#customApiKeyInput');
-  const msg = el('#apiKeyModalMsg');
-  const val = (keyInput?.value || '').trim();
-
-  if (!val) {
-    if (msg) {
-      msg.textContent = 'Masukkan API Key atau klik "Hapus Key" untuk mereset.';
-      msg.className = 'modal-msg error';
-    }
-    return;
-  }
-
-  if (val.length < 15) {
-    if (msg) {
-      msg.textContent = 'Format key terlalu pendek. Pastikan menyalin key valid dari Google AI Studio.';
-      msg.className = 'modal-msg error';
-    }
-    return;
-  }
-
-  localStorage.setItem('mc_custom_gemini_key', val);
-  updateApiKeyUI();
-  if (msg) {
-    msg.textContent = '✓ API Key berhasil disimpan! Semua mode AI siap digunakan.';
-    msg.className = 'modal-msg success';
-  }
-  setTimeout(() => {
-    closeApiKeyModal();
-  }, 1200);
-}
-
-function clearCustomApiKey() {
-  localStorage.removeItem('mc_custom_gemini_key');
-  const keyInput = el('#customApiKeyInput');
-  const msg = el('#apiKeyModalMsg');
-  if (keyInput) keyInput.value = '';
-  updateApiKeyUI();
-  if (msg) {
-    msg.textContent = 'API Key pribadi telah dihapus.';
-    msg.className = 'modal-msg';
-  }
-}
-
-function initApiKeyManagement() {
-  updateApiKeyUI();
-  const btnOpenKey = el('#btnOpenApiKey');
-  const btnKeyTop = el('#btnApiKeyTop');
-  const btnCloseKey = el('#btnApiKeyClose');
-  const btnSaveKey = el('#btnSaveApiKey');
-  const btnClearKey = el('#btnClearApiKey');
-  const toggleKeyVis = el('#toggleApiKeyVisibility');
-  const customKeyInput = el('#customApiKeyInput');
-
-  if (btnOpenKey) btnOpenKey.addEventListener('click', () => { closeSidebar(); openApiKeyModal(); });
-  if (btnKeyTop) btnKeyTop.addEventListener('click', openApiKeyModal);
-  if (btnCloseKey) btnCloseKey.addEventListener('click', closeApiKeyModal);
-  if (btnSaveKey) btnSaveKey.addEventListener('click', saveCustomApiKey);
-  if (btnClearKey) btnClearKey.addEventListener('click', clearCustomApiKey);
-
-  const modalOverlay = el('#apiKeyModal');
-  if (modalOverlay) {
-    modalOverlay.addEventListener('click', (e) => {
-      if (e.target === modalOverlay) closeApiKeyModal();
-    });
-  }
-
-  if (customKeyInput) {
-    customKeyInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') saveCustomApiKey();
-      if (e.key === 'Escape') closeApiKeyModal();
-    });
-  }
-
-  if (toggleKeyVis && customKeyInput) {
-    toggleKeyVis.addEventListener('click', (e) => {
-      e.preventDefault();
-      const isPwd = customKeyInput.type === 'password';
-      customKeyInput.type = isPwd ? 'text' : 'password';
-      const eyeOpen = toggleKeyVis.querySelector('.eye-open');
-      const eyeClosed = toggleKeyVis.querySelector('.eye-closed');
-      if (eyeOpen) eyeOpen.style.display = isPwd ? 'none' : 'block';
-      if (eyeClosed) eyeClosed.style.display = isPwd ? 'block' : 'none';
-      customKeyInput.focus();
-    });
   }
 }
 
