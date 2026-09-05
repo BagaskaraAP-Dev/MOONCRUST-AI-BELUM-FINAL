@@ -1,6 +1,13 @@
 {
   "name": "mooncrust-ai",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Mooncrust AI — Daily AI Assistant",
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "start": "node local-dev.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
 }

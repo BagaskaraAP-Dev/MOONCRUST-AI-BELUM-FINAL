@@ -125,6 +125,7 @@ function load() {
     }
   } catch(e) {}
   renderHistory();
+  updateTopbarTitle();
   if (S.curId) {
     const c = getCur();
     if (c && c.msgs.length) renderChat(c);
@@ -138,6 +139,7 @@ function newConv() {
   S.curId = id;
   save();
   renderHistory();
+  updateTopbarTitle();
   showWelcome();
   D.input.focus();
   closeSidebar();
@@ -151,43 +153,207 @@ function switchConv(id) {
   S.curId = id;
   save();
   renderHistory();
+  updateTopbarTitle();
   const c = getCur();
   if (c && c.msgs.length) renderChat(c);
   else showWelcome();
   closeSidebar();
 }
 
+function renameConv(id, newTitle) {
+  const c = S.convs.find(x => x.id === id);
+  if (!c) return;
+  const clean = (newTitle || '').trim();
+  if (clean && clean !== c.title) {
+    c.title = clean;
+    save();
+    renderHistory();
+    updateTopbarTitle();
+  }
+}
+
 function deleteConv(id) {
+  if (!confirm('Hapus percakapan ini?')) return;
   S.convs = S.convs.filter(c => c.id !== id);
   if (S.curId === id) {
     S.curId = S.convs[0]?.id || null;
-    if (S.curId) { const c = getCur(); if (c?.msgs.length) renderChat(c); else showWelcome(); }
-    else showWelcome();
+    if (S.curId) {
+      const c = getCur();
+      if (c?.msgs.length) renderChat(c);
+      else showWelcome();
+    } else {
+      showWelcome();
+    }
   }
   save();
   renderHistory();
+  updateTopbarTitle();
+}
+
+function updateTopbarTitle() {
+  const topTitle = el('#topbarTitle');
+  const editBtn = el('#btnEditTitleTop');
+  const c = getCur();
+  if (c && c.msgs.length > 0 && c.title) {
+    if (topTitle) topTitle.innerHTML = `<span class="topbar__chat-text">${esc(c.title)}</span>`;
+    if (editBtn) editBtn.style.display = 'inline-flex';
+  } else {
+    if (topTitle) topTitle.innerHTML = `MOONCRUST <span class="badge-tag">AI</span>`;
+    if (editBtn) editBtn.style.display = 'none';
+  }
 }
 
 // ===== HISTORY =====
 function renderHistory() {
   D.historyList.innerHTML = '';
+  if (S.convs.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'hist-empty';
+    empty.textContent = 'Belum ada percakapan';
+    D.historyList.appendChild(empty);
+    return;
+  }
+
   S.convs.forEach(c => {
     const d = document.createElement('div');
     d.className = `hist-item ${c.id === S.curId ? 'active' : ''}`;
+    d.dataset.id = c.id;
     d.innerHTML = `
-      <span class="hist-item__label">${esc(c.title)}</span>
-      <button class="hist-item__del" title="Hapus">✕</button>
+      <div class="hist-item__main">
+        <svg class="hist-item__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span class="hist-item__label" title="${esc(c.title)}">${esc(c.title)}</span>
+      </div>
+      <div class="hist-item__actions">
+        <button class="hist-item__btn hist-item__edit" title="Ganti Judul" aria-label="Ganti Judul">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+        </button>
+        <button class="hist-item__btn hist-item__del" title="Hapus Percakapan" aria-label="Hapus Percakapan">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        </button>
+      </div>
     `;
+
+    // Click item to switch conversation (ignore if clicking inside actions or input)
     d.addEventListener('click', (e) => {
-      if (e.target.classList.contains('hist-item__del')) { deleteConv(c.id); return; }
+      if (e.target.closest('.hist-item__actions') || e.target.closest('.hist-item__input-wrap')) return;
       switchConv(c.id);
     });
+
+    // Edit button click -> start inline edit
+    const editBtn = d.querySelector('.hist-item__edit');
+    if (editBtn) {
+      editBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        startInlineEdit(d, c);
+      });
+    }
+
+    // Delete button click
+    const delBtn = d.querySelector('.hist-item__del');
+    if (delBtn) {
+      delBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteConv(c.id);
+      });
+    }
+
     D.historyList.appendChild(d);
   });
 }
 
+function startInlineEdit(itemEl, conv) {
+  itemEl.classList.add('editing');
+  itemEl.innerHTML = `
+    <div class="hist-item__input-wrap">
+      <input type="text" class="hist-item__input" value="${esc(conv.title)}" maxlength="60" />
+      <div class="hist-item__actions">
+        <button class="hist-item__btn hist-item__save" title="Simpan">✓</button>
+        <button class="hist-item__btn hist-item__cancel" title="Batal">✕</button>
+      </div>
+    </div>
+  `;
+  const input = itemEl.querySelector('.hist-item__input');
+  const saveBtn = itemEl.querySelector('.hist-item__save');
+  const cancelBtn = itemEl.querySelector('.hist-item__cancel');
+
+  input.focus();
+  input.select();
+
+  const handleSave = (e) => {
+    if (e) e.stopPropagation();
+    const val = input.value.trim();
+    if (val) {
+      renameConv(conv.id, val);
+    } else {
+      renderHistory();
+    }
+  };
+
+  const handleCancel = (e) => {
+    if (e) e.stopPropagation();
+    renderHistory();
+  };
+
+  saveBtn.addEventListener('click', handleSave);
+  cancelBtn.addEventListener('click', handleCancel);
+
+  input.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') handleSave(e);
+    if (e.key === 'Escape') handleCancel(e);
+  });
+}
+
+// ===== WELCOME GREETING & CLOCK =====
+function updateWelcomeGreeting() {
+  const titleEl = el('#welcomeTitle');
+  const descEl = el('#welcomeDesc');
+  const timeEl = el('#welcomeLiveTime');
+  if (!titleEl && !timeEl) return;
+
+  const now = new Date();
+  const hour = now.getHours();
+
+  let greeting = 'Halo.';
+  let sub = 'Apa yang bisa saya bantu untukmu hari ini?';
+
+  if (hour >= 4 && hour < 11) {
+    greeting = 'Selamat Pagi.';
+    sub = 'Awali harimu dengan baik. Apa yang ingin kita selesaikan hari ini?';
+  } else if (hour >= 11 && hour < 15) {
+    greeting = 'Selamat Siang.';
+    sub = 'Semoga harimu lancar. Ada hal yang butuh dibantu siang ini?';
+  } else if (hour >= 15 && hour < 18) {
+    greeting = 'Selamat Sore.';
+    sub = 'Bagaimana harimu berjalan? Ada yang ingin didiskusikan sore ini?';
+  } else {
+    greeting = 'Selamat Malam.';
+    sub = 'Malam yang tenang untuk berpikir. Apa yang ingin kita diskusikan?';
+  }
+
+  if (titleEl) titleEl.textContent = greeting;
+  if (descEl) descEl.textContent = sub;
+
+  if (timeEl) {
+    const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const months = [
+      'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+      'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+    ];
+    const dayName = days[now.getDay()];
+    const date = now.getDate();
+    const monthName = months[now.getMonth()];
+    const year = now.getFullYear();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+
+    timeEl.textContent = `${dayName}, ${date} ${monthName} ${year} • ${hh}:${mm} WIB`;
+  }
+}
+
 // ===== DISPLAY =====
 function showWelcome() {
+  updateWelcomeGreeting();
   D.welcome.style.display = 'flex';
   D.chat.classList.remove('show');
   D.messages.innerHTML = '';
@@ -473,6 +639,7 @@ async function send() {
     const titleTxt = txt || '📷 Foto';
     c.title = titleTxt.length > 35 ? titleTxt.slice(0, 35) + '…' : titleTxt;
     renderHistory();
+    updateTopbarTitle();
   }
 
   const userMsg = { id: 'u_' + Date.now(), role: 'user', content: txt || '📷 Analisa foto ini', ts: Date.now() };
@@ -651,6 +818,8 @@ function closeSidebar() { D.sidebar.classList.remove('open'); document.querySele
 // ===== EVENTS =====
 function init() {
   load();
+  updateWelcomeGreeting();
+  setInterval(updateWelcomeGreeting, 30000);
 
   D.sendBtn.addEventListener('click', send);
   D.input.addEventListener('keydown', e => {
@@ -697,6 +866,23 @@ function init() {
     D.micBtn.addEventListener('click', toggleMic);
   }
   initSpeechRecognition();
+
+  const sidebarCloseBtn = el('#sidebarCloseBtn');
+  if (sidebarCloseBtn) {
+    sidebarCloseBtn.addEventListener('click', closeSidebar);
+  }
+
+  const btnEditTop = el('#btnEditTitleTop');
+  if (btnEditTop) {
+    btnEditTop.addEventListener('click', () => {
+      const c = getCur();
+      if (!c) return;
+      const newTitle = prompt('Ganti judul percakapan:', c.title);
+      if (newTitle !== null && newTitle.trim()) {
+        renameConv(c.id, newTitle.trim());
+      }
+    });
+  }
 
   D.menuBtn.addEventListener('click', () => {
     const isOpen = D.sidebar.classList.toggle('open');
@@ -787,6 +973,21 @@ function init() {
     }
   };
   
+  const togglePinBtn = el('#togglePinBtn');
+  if (togglePinBtn && pinInput) {
+    togglePinBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const isPwd = pinInput.type === 'password';
+      pinInput.type = isPwd ? 'text' : 'password';
+      const eyeOpen = togglePinBtn.querySelector('.eye-open');
+      const eyeClosed = togglePinBtn.querySelector('.eye-closed');
+      if (eyeOpen) eyeOpen.style.display = isPwd ? 'none' : 'block';
+      if (eyeClosed) eyeClosed.style.display = isPwd ? 'block' : 'none';
+      togglePinBtn.title = isPwd ? 'Sembunyikan Token' : 'Lihat Token';
+      pinInput.focus();
+    });
+  }
+
   pinBtn.addEventListener('click', submitPin);
   pinInput.addEventListener('keydown', e => {
     if (e.key === 'Enter') submitPin();
@@ -797,4 +998,8 @@ function init() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', init);
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}

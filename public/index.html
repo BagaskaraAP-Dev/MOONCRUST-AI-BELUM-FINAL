@@ -13,12 +13,12 @@
   <meta name="mobile-web-app-capable" content="yes">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css" integrity="sha384-PiLidnnRuzFgp4qiN8oGNmktrV8ETL+6a8heAxljUX4A+3XWlocwaMn9duBUepfK" crossorigin="anonymous">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.14/dist/purify.min.js" integrity="sha384-46dPGH1XlTmj7bc50bqLjTdORXs/3EP2QpA/6EWbelYWOY9VGp+87RT61S3Mcslb" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="style.css?v=2.1.0">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js" integrity="sha384-F/bZzf7p3Joyp5psL90p/p89AZJsndkSoGwRpXcZhleCWhd8SnRuoYo4d0yirjJp" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" integrity="sha384-/TQbtLCAerC3jgaim+N78RZSDYV7ryeoBCVqTuzRrFec2akfBkHS7ACQ3PQhvMVi" crossorigin="anonymous" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.14/dist/purify.min.js" integrity="sha384-46dPGH1XlTmj7bc50bqLjTdORXs/3EP2QpA/6EWbelYWOY9VGp+87RT61S3Mcslb" crossorigin="anonymous" defer></script>
+  <link rel="stylesheet" href="style.css?v=2.2.0">
 </head>
 <body>
   <!-- Lock Screen -->
@@ -29,7 +29,16 @@
       </div>
       <h2>Akses Terkunci</h2>
       <p>Masukkan Token Akses untuk membuka Mooncrust.</p>
-      <input type="password" id="pinInput" placeholder="Kunci Token Akses" autocomplete="off" />
+      <div class="lock-input-wrap">
+        <span class="lock-input-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </span>
+        <input type="password" id="pinInput" placeholder="Kunci Token Akses" autocomplete="off" spellcheck="false" />
+        <button type="button" class="lock-eye-btn" id="togglePinBtn" title="Lihat Token" aria-label="Lihat Token">
+          <svg class="eye-open" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="eye-closed" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+        </button>
+      </div>
       <button id="pinSubmitBtn">Buka Kunci</button>
       <p id="pinError" class="pin-error"></p>
     </div>
@@ -39,16 +48,15 @@
     <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar__brand">
-        <div class="brand-logo">
-          <div class="brand-logo__glow"></div>
-          <span class="brand-logo__icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg></span>
-        </div>
-        <div>
+        <div class="sidebar__brand-main">
           <div class="brand-name">
             MOONCRUST <span class="badge-tag">AI</span>
           </div>
           <div class="brand-status"><span class="dot-live"></span>System Active</div>
         </div>
+        <button class="sidebar__close" id="sidebarCloseBtn" title="Tutup Menu" aria-label="Tutup Menu">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
 
       <button class="btn-new" id="btnNew">
@@ -84,50 +92,31 @@
     <main class="main">
       <!-- Mobile Header -->
       <div class="topbar" id="topbar">
-        <button class="topbar__menu" id="menuBtn">
+        <button class="topbar__menu" id="menuBtn" title="Buka Menu" aria-label="Buka Menu">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
         </button>
-        <span class="topbar__title">MOONCRUST <span class="badge-tag">AI</span></span>
-        <button class="topbar__act" id="btnExportTop" title="Ekspor & Unduh Obrolan">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        </button>
+        <div class="topbar__title-wrap" id="topbarTitleWrap">
+          <span class="topbar__title" id="topbarTitle">MOONCRUST <span class="badge-tag">AI</span></span>
+        </div>
+        <div class="topbar__actions">
+          <button class="topbar__act" id="btnEditTitleTop" title="Ganti Judul Percakapan" aria-label="Ganti Judul Percakapan" style="display:none;">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </button>
+          <button class="topbar__act" id="btnExportTop" title="Ekspor & Unduh Obrolan" aria-label="Ekspor & Unduh Obrolan">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          </button>
+        </div>
       </div>
 
       <!-- Welcome State -->
       <section class="welcome" id="welcome">
-        <h1 class="welcome__title">MOONCRUST</h1>
-        <p class="welcome__desc" id="welcomeDesc">Halo! Saya Mooncrust, asisten harianmu. Apa yang ingin kita selesaikan hari ini?</p>
-        
-        <!-- Quick Inspiration Cards -->
-        <div class="welcome__suggestions" id="welcomeSuggestions">
-          <button class="sugg-card" onclick="usePrompt('Berikan 5 ide proyek teknologi kreatif dan bermanfaat yang bisa dibuat sekarang')">
-            <span class="sugg-icon">💡</span>
-            <div class="sugg-text">
-              <span class="sugg-title">Ide Proyek Kreatif</span>
-              <span class="sugg-sub">Inspirasi & konsep baru</span>
-            </div>
-          </button>
-          <button class="sugg-card" onclick="usePrompt('Bantu saya membuat script JavaScript sederhana dan jelaskan alurnya langkah demi langkah')">
-            <span class="sugg-icon">💻</span>
-            <div class="sugg-text">
-              <span class="sugg-title">Bantu Tulis Kode</span>
-              <span class="sugg-sub">Coding & troubleshooting</span>
-            </div>
-          </button>
-          <button class="sugg-card" onclick="usePrompt('Rangkumkan tips terbaik untuk menjaga fokus dan produktivitas harian')">
-            <span class="sugg-icon">🎯</span>
-            <div class="sugg-text">
-              <span class="sugg-title">Tips Produktivitas</span>
-              <span class="sugg-sub">Atur waktu lebih optimal</span>
-            </div>
-          </button>
-          <button class="sugg-card" onclick="usePrompt('Tolong jelaskan konsep Artificial Intelligence secara sederhana dan mudah dipahami')">
-            <span class="sugg-icon">🤖</span>
-            <div class="sugg-text">
-              <span class="sugg-title">Tanya Apa Saja</span>
-              <span class="sugg-sub">Penjelasan lugas & jelas</span>
-            </div>
-          </button>
+        <div class="welcome__hero">
+          <div class="welcome__time-badge" id="welcomeTimeBadge">
+            <span class="badge-dot-live"></span>
+            <span id="welcomeLiveTime">Memuat waktu...</span>
+          </div>
+          <h1 class="welcome__title" id="welcomeTitle">Selamat Malam.</h1>
+          <p class="welcome__desc" id="welcomeDesc">Apa yang bisa saya bantu untukmu hari ini?</p>
         </div>
       </section>
 
@@ -171,6 +160,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=2.1.0"></script>
+  <script src="app.js?v=2.2.0" defer></script>
 </body>
 </html>
