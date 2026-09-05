@@ -6,10 +6,10 @@
 import { timingSafeEqual } from 'node:crypto';
 
 const MODEL_MAP = {
-  'mc-noob':    { id: 'gemini-1.5-flash', fallbacks: ['gemini-2.0-flash', 'gemini-1.5-flash-latest'], maxOut: 4096,  keyEnv: 'GEMINI_KEY_1' },
-  'mc-pro':     { id: 'gemini-2.0-flash', fallbacks: ['gemini-1.5-flash', 'gemini-2.5-flash'], maxOut: 8192,  keyEnv: 'GEMINI_KEY_2' },
-  'mc-expert':  { id: 'gemini-1.5-pro',   fallbacks: ['gemini-2.0-flash', 'gemini-1.5-flash'], maxOut: 8192,  keyEnv: 'GEMINI_KEY_3' },
-  'mc-advance': { id: 'gemini-2.0-flash', fallbacks: ['gemini-1.5-pro', 'gemini-1.5-flash'], maxOut: 12288, keyEnv: 'GEMINI_KEY_4' },
+  'mc-noob':    { id: 'gemini-3.5-flash', fallbacks: ['gemini-2.5-flash', 'gemini-flash-latest'], maxOut: 4096,  keyEnv: 'GEMINI_KEY_1' },
+  'mc-pro':     { id: 'gemini-3.6-flash', fallbacks: ['gemini-3.5-flash', 'gemini-2.5-flash'], maxOut: 8192,  keyEnv: 'GEMINI_KEY_2' },
+  'mc-expert':  { id: 'gemini-3.7-flash', fallbacks: ['gemini-3.6-flash', 'gemini-2.5-pro'],   maxOut: 8192,  keyEnv: 'GEMINI_KEY_3' },
+  'mc-advance': { id: 'gemini-3.7-flash', fallbacks: ['gemini-3.8-flash', 'gemini-3.6-flash'], maxOut: 12288, keyEnv: 'GEMINI_KEY_4' },
 };
 
 const DEFAULT_ALIAS = 'mc-pro';
