@@ -51,6 +51,11 @@
         Chat Baru
       </button>
 
+      <button class="btn-sidebar-act" id="btnExport" title="Unduh Riwayat Obrolan">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Ekspor Chat
+      </button>
+
       <div class="sidebar__history" id="historyList"></div>
 
       <div class="sidebar__footer">
@@ -81,6 +86,38 @@
       <section class="welcome" id="welcome">
         <h1 class="welcome__title">MOONCRUST</h1>
         <p class="welcome__desc" id="welcomeDesc">Halo! Saya Mooncrust, asisten harianmu. Apa yang ingin kita selesaikan hari ini?</p>
+        
+        <!-- Quick Inspiration Cards -->
+        <div class="welcome__suggestions" id="welcomeSuggestions">
+          <button class="sugg-card" onclick="usePrompt('Berikan 5 ide proyek teknologi kreatif dan bermanfaat yang bisa dibuat sekarang')">
+            <span class="sugg-icon">💡</span>
+            <div class="sugg-text">
+              <span class="sugg-title">Ide Proyek Kreatif</span>
+              <span class="sugg-sub">Inspirasi & konsep baru</span>
+            </div>
+          </button>
+          <button class="sugg-card" onclick="usePrompt('Bantu saya membuat script JavaScript sederhana dan jelaskan alurnya langkah demi langkah')">
+            <span class="sugg-icon">💻</span>
+            <div class="sugg-text">
+              <span class="sugg-title">Bantu Tulis Kode</span>
+              <span class="sugg-sub">Coding & troubleshooting</span>
+            </div>
+          </button>
+          <button class="sugg-card" onclick="usePrompt('Rangkumkan tips terbaik untuk menjaga fokus dan produktivitas harian')">
+            <span class="sugg-icon">🎯</span>
+            <div class="sugg-text">
+              <span class="sugg-title">Tips Produktivitas</span>
+              <span class="sugg-sub">Atur waktu lebih optimal</span>
+            </div>
+          </button>
+          <button class="sugg-card" onclick="usePrompt('Tolong jelaskan konsep Artificial Intelligence secara sederhana dan mudah dipahami')">
+            <span class="sugg-icon">🤖</span>
+            <div class="sugg-text">
+              <span class="sugg-title">Tanya Apa Saja</span>
+              <span class="sugg-sub">Penjelasan lugas & jelas</span>
+            </div>
+          </button>
+        </div>
       </section>
 
       <!-- Chat Messages -->
@@ -100,8 +137,11 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
           </label>
           <input type="file" id="imageInput" accept="image/*" hidden />
+          <button class="composer__mic" id="micBtn" type="button" title="Ketik dengan Suara (Voice Input)">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          </button>
           <textarea id="input" rows="1" placeholder="Ketik pesan atau kirim foto..."></textarea>
-          <button class="composer__send" id="sendBtn">
+          <button class="composer__send" id="sendBtn" title="Kirim Pesan">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
           </button>
         </div>

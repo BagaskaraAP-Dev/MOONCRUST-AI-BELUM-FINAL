@@ -25,12 +25,14 @@ const D = {
   sidebar:     el('#sidebar'),
   menuBtn:     el('#menuBtn'),
   btnNew:      el('#btnNew'),
+  btnExport:   el('#btnExport'),
   historyList: el('#historyList'),
   welcome:     el('#welcome'),
   chat:        el('#chat'),
   messages:    el('#messages'),
   input:       el('#input'),
   sendBtn:     el('#sendBtn'),
+  micBtn:      el('#micBtn'),
   previewModal: el('#previewModal'),
   previewFrame: el('#previewFrame'),
   closePreview: el('#closePreview'),
@@ -209,6 +211,13 @@ function appendMsg(m, imageDataUrl) {
   const t = new Date(m.ts || Date.now()).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   const imgHtml = imageDataUrl ? `<img class="msg__image" src="${imageDataUrl}" alt="Uploaded" />` : '';
 
+  const actionsHtml = `
+      <div class="msg__actions">
+        <button class="msg-act-btn" onclick="copyMsg('${m.id}', this)">📋 Salin</button>
+        ${m.role === 'assistant' ? `<button class="msg-act-btn" onclick="speakMsg('${m.id}', this)">🔊 Dengar</button>` : ''}
+      </div>
+  `;
+
   row.innerHTML = `
     <div class="msg__avatar">${avatar}</div>
     <div class="msg__body">
@@ -218,9 +227,7 @@ function appendMsg(m, imageDataUrl) {
       </div>
       <div class="msg__text markdown-body">${m.role === 'user' ? esc(m.content) : renderMd(m.content)}</div>
       ${imgHtml}
-      <div class="msg__actions">
-        <button class="msg-act-btn" onclick="copyMsg('${m.id}')">📋 Copy</button>
-      </div>
+      ${actionsHtml}
     </div>
   `;
 
@@ -272,11 +279,184 @@ window.runPreview = function(btn) {
   D.previewModal.classList.add('show');
 };
 
-window.copyMsg = function(id) {
+// ===== VOICE & ACTIONS =====
+let currentSpeechBtn = null;
+
+window.speakMsg = function(id, btn) {
+  if (!('speechSynthesis' in window)) {
+    alert('Browser ini tidak mendukung fitur Text-to-Speech.');
+    return;
+  }
+
+  // If already speaking this message, toggle stop
+  if (window.speechSynthesis.speaking && currentSpeechBtn === btn) {
+    window.speechSynthesis.cancel();
+    btn.innerHTML = '🔊 Dengar';
+    btn.classList.remove('speaking');
+    currentSpeechBtn = null;
+    return;
+  }
+
+  // Stop any other speech
+  window.speechSynthesis.cancel();
+  if (currentSpeechBtn) {
+    currentSpeechBtn.innerHTML = '🔊 Dengar';
+    currentSpeechBtn.classList.remove('speaking');
+  }
+
   const c = getCur();
   const m = c?.msgs.find(x => x.id === id);
-  if (m) navigator.clipboard.writeText(m.content);
+  if (!m || !m.content) return;
+
+  const cleanText = m.content
+    .replace(/```[\s\S]*?```/g, 'cuplikan kode.')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[#*_~>]/g, '')
+    .trim();
+
+  const utt = new SpeechSynthesisUtterance(cleanText);
+  utt.lang = 'id-ID';
+  utt.rate = 1.0;
+  utt.pitch = 1.0;
+
+  btn.innerHTML = '⏹ Berhenti';
+  btn.classList.add('speaking');
+  currentSpeechBtn = btn;
+
+  utt.onend = () => {
+    btn.innerHTML = '🔊 Dengar';
+    btn.classList.remove('speaking');
+    currentSpeechBtn = null;
+  };
+
+  utt.onerror = () => {
+    btn.innerHTML = '🔊 Dengar';
+    btn.classList.remove('speaking');
+    currentSpeechBtn = null;
+  };
+
+  window.speechSynthesis.speak(utt);
 };
+
+window.copyMsg = function(id, btn) {
+  const c = getCur();
+  const m = c?.msgs.find(x => x.id === id);
+  if (m) {
+    navigator.clipboard.writeText(m.content).then(() => {
+      if (btn) {
+        const orig = btn.innerHTML;
+        btn.innerHTML = '✅ Tersalin!';
+        setTimeout(() => { btn.innerHTML = orig; }, 2000);
+      }
+    });
+  }
+};
+
+window.usePrompt = function(promptText) {
+  if (S.busy) return;
+  D.input.value = promptText;
+  D.input.dispatchEvent(new Event('input'));
+  send();
+};
+
+// ===== SPEECH TO TEXT (MIC) =====
+let recognition = null;
+let isRecording = false;
+
+function initSpeechRecognition() {
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) {
+    if (D.micBtn) {
+      D.micBtn.title = 'Browser tidak mendukung voice input';
+      D.micBtn.style.opacity = '0.5';
+    }
+    return;
+  }
+
+  recognition = new SpeechRec();
+  recognition.lang = 'id-ID';
+  recognition.continuous = false;
+  recognition.interimResults = false;
+
+  recognition.onstart = () => {
+    isRecording = true;
+    if (D.micBtn) D.micBtn.classList.add('listening');
+  };
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript;
+    if (transcript) {
+      if (D.input.value) {
+        D.input.value += ' ' + transcript;
+      } else {
+        D.input.value = transcript;
+      }
+      D.input.dispatchEvent(new Event('input'));
+      D.input.focus();
+    }
+  };
+
+  recognition.onerror = (e) => {
+    console.warn('Speech recognition error:', e.error);
+    isRecording = false;
+    if (D.micBtn) D.micBtn.classList.remove('listening');
+  };
+
+  recognition.onend = () => {
+    isRecording = false;
+    if (D.micBtn) D.micBtn.classList.remove('listening');
+  };
+}
+
+function toggleMic() {
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRec) {
+    alert('Browser kamu belum mendukung Voice Input (Speech-to-Text). Silakan gunakan browser Chrome.');
+    return;
+  }
+  if (!recognition) initSpeechRecognition();
+
+  if (isRecording) {
+    recognition.stop();
+  } else {
+    try {
+      recognition.start();
+    } catch (e) {
+      console.warn(e);
+    }
+  }
+}
+
+// ===== EXPORT CHAT =====
+function exportCurrentChat() {
+  const c = getCur();
+  if (!c || !c.msgs || c.msgs.length === 0) {
+    alert('Belum ada pesan untuk diekspor.');
+    return;
+  }
+
+  let md = `# Percakapan: ${c.title || 'Mooncrust AI'}\n`;
+  md += `Waktu Ekspor: ${new Date().toLocaleString('id-ID')}\n\n`;
+  md += `---\n\n`;
+
+  c.msgs.forEach(m => {
+    const role = m.role === 'user' ? '👤 Anda' : '🤖 Mooncrust AI';
+    const time = new Date(m.ts || Date.now()).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+    md += `### [${time}] ${role}\n${m.content}\n\n`;
+  });
+
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const safeName = (c.title || 'chat').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30);
+  a.href = url;
+  a.download = `Mooncrust_${safeName}_${Date.now()}.md`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 // ===== SEND + AI (SSE STREAMING) =====
 let currentAbort = null; // AbortController for current request
@@ -483,7 +663,14 @@ function init() {
 
   D.btnNew.addEventListener('click', newConv);
 
+  if (D.btnExport) {
+    D.btnExport.addEventListener('click', exportCurrentChat);
+  }
 
+  if (D.micBtn) {
+    D.micBtn.addEventListener('click', toggleMic);
+  }
+  initSpeechRecognition();
 
   D.menuBtn.addEventListener('click', () => {
     D.sidebar.classList.toggle('open');
