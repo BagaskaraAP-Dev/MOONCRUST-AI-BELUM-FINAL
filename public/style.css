@@ -313,6 +313,23 @@ body {
   -webkit-text-fill-color: transparent;
 }
 
+.topbar__act {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #fff;
+  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.topbar__act:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
 /* ================== WELCOME ================== */
 .welcome {
   flex: 1;

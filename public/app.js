@@ -666,6 +666,10 @@ function init() {
   if (D.btnExport) {
     D.btnExport.addEventListener('click', exportCurrentChat);
   }
+  const btnExportTop = el('#btnExportTop');
+  if (btnExportTop) {
+    btnExportTop.addEventListener('click', exportCurrentChat);
+  }
 
   if (D.micBtn) {
     D.micBtn.addEventListener('click', toggleMic);
