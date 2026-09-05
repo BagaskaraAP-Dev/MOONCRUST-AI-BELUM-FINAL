@@ -6,10 +6,10 @@
 import { timingSafeEqual } from 'node:crypto';
 
 const MODEL_MAP = {
-  'mc-noob':    { id: 'gemini-3.5-flash', maxOut: 4096,  think: 'minimal', keyEnv: 'GEMINI_KEY_1' },
-  'mc-pro':     { id: 'gemini-3.6-flash', maxOut: 6144,  think: 'minimal', keyEnv: 'GEMINI_KEY_2' },
-  'mc-expert':  { id: 'gemini-3.7-flash', maxOut: 8192,  think: 'low',     keyEnv: 'GEMINI_KEY_3' },
-  'mc-advance': { id: 'gemini-3.7-flash', maxOut: 12288, think: 'medium',  keyEnv: 'GEMINI_KEY_4' },
+  'mc-noob':    { id: 'gemini-1.5-flash', fallbacks: ['gemini-2.0-flash', 'gemini-1.5-flash-latest'], maxOut: 4096,  keyEnv: 'GEMINI_KEY_1' },
+  'mc-pro':     { id: 'gemini-2.0-flash', fallbacks: ['gemini-1.5-flash', 'gemini-2.5-flash'], maxOut: 8192,  keyEnv: 'GEMINI_KEY_2' },
+  'mc-expert':  { id: 'gemini-1.5-pro',   fallbacks: ['gemini-2.0-flash', 'gemini-1.5-flash'], maxOut: 8192,  keyEnv: 'GEMINI_KEY_3' },
+  'mc-advance': { id: 'gemini-2.0-flash', fallbacks: ['gemini-1.5-pro', 'gemini-1.5-flash'], maxOut: 12288, keyEnv: 'GEMINI_KEY_4' },
 };
 
 const DEFAULT_ALIAS = 'mc-pro';
@@ -53,7 +53,7 @@ const scrub = (s) =>
 export default async function handler(req, res) {
   // CORS & Security Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-mc-token');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-mc-token, x-gemini-key');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   res.setHeader('Pragma', 'no-cache');
@@ -115,13 +115,23 @@ export default async function handler(req, res) {
     }
   }
 
-  const key = process.env[cfg.keyEnv] || process.env.GEMINI_KEY_1 || process.env.GEMINI_API_KEY;
+  const key =
+    req.headers['x-gemini-key'] ||
+    process.env[cfg.keyEnv] ||
+    process.env.GEMINI_KEY_1 ||
+    process.env.GEMINI_KEY_2 ||
+    process.env.GEMINI_KEY_3 ||
+    process.env.GEMINI_KEY_4 ||
+    process.env.GEMINI_API_KEY ||
+    process.env.GEMINI_KEY;
+
   if (!key) {
-    return res.status(500).json({ error: `Kunci untuk mode ini belum di-set (${cfg.keyEnv} / GEMINI_KEY_1). [E-NOKEY]` });
+    return res.status(500).json({
+      error: 'Gemini API Key belum dikonfigurasi. Silakan masukkan API Key Anda melalui tombol "Atur API Key" di menu samping atau klik tombol di bawah. [E-NOKEY]'
+    });
   }
 
   const generationConfig = { maxOutputTokens: cfg.maxOut };
-  if (cfg.think) generationConfig.thinkingConfig = { thinkingLevel: cfg.think };
 
   // Build contents with optional image in the last user message
   const contents = trimmed.map((m, i) => {
@@ -144,6 +154,8 @@ export default async function handler(req, res) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
 
+  const candidateModelIds = [cfg.id, ...(cfg.fallbacks || [])];
+
   try {
     if (wantStream) {
       // ===== SSE STREAMING MODE =====
@@ -151,27 +163,57 @@ export default async function handler(req, res) {
       res.setHeader('Connection', 'keep-alive');
       res.setHeader('X-Accel-Buffering', 'no');
 
-      const upstreamRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${cfg.id}:streamGenerateContent?alt=sse`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-          body: JSON.stringify({
-            contents,
-            systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
-            generationConfig,
-          }),
-          signal: controller.signal,
+      let upstreamRes = null;
+      let lastErrText = '';
+
+      for (const modelId of candidateModelIds) {
+        try {
+          const attempt = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:streamGenerateContent?alt=sse`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+              body: JSON.stringify({
+                contents,
+                systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
+                generationConfig,
+              }),
+              signal: controller.signal,
+            }
+          );
+
+          if (attempt.ok) {
+            upstreamRes = attempt;
+            break;
+          }
+
+          lastErrText = await attempt.text().catch(() => '');
+          // If 404 (model not found), try next fallback model
+          if (attempt.status === 404) {
+            continue;
+          }
+
+          upstreamRes = attempt;
+          break;
+        } catch (e) {
+          if (e.name === 'AbortError') throw e;
         }
-      );
+      }
 
       clearTimeout(timeoutId);
 
-      if (!upstreamRes.ok) {
-        const errText = await upstreamRes.text().catch(() => '');
-        let errMsg = `Permintaan ditolak (E-${upstreamRes.status}).`;
-        if (upstreamRes.status === 429) errMsg = 'Kuota sedang habis. Coba lagi sebentar lagi.';
-        if (upstreamRes.status === 404) errMsg = 'Mode ini tidak tersedia. [E-404]';
+      if (!upstreamRes || !upstreamRes.ok) {
+        let errMsg = 'Permintaan ditolak oleh layanan AI.';
+        const status = upstreamRes ? upstreamRes.status : 502;
+        if (lastErrText.includes('API_KEY_INVALID') || lastErrText.includes('API key not valid')) {
+          errMsg = 'API Key Gemini tidak valid. Silakan periksa kembali API Key Anda melalui tombol "Atur API Key". [E-KEY-INVALID]';
+        } else if (status === 429) {
+          errMsg = 'Kuota Gemini API sedang habis atau dibatasi sementara. Coba lagi dalam beberapa saat. [E-429]';
+        } else if (status === 404) {
+          errMsg = 'Model AI yang dipilih sedang tidak tersedia dari Google. [E-404]';
+        } else {
+          errMsg = `Permintaan ditolak oleh model (E-${status}). ${scrub(lastErrText)}`;
+        }
         res.write(`data: ${JSON.stringify({ error: errMsg })}\n\n`);
         res.write('data: [DONE]\n\n');
         return res.end();
@@ -216,21 +258,53 @@ export default async function handler(req, res) {
 
     } else {
       // ===== NON-STREAMING FALLBACK =====
-      const upstreamRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${cfg.id}:generateContent`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-          body: JSON.stringify({
-            contents,
-            systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
-            generationConfig,
-          }),
-          signal: controller.signal,
+      let upstreamRes = null;
+      let lastErrText = '';
+
+      for (const modelId of candidateModelIds) {
+        try {
+          const attempt = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+              body: JSON.stringify({
+                contents,
+                systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
+                generationConfig,
+              }),
+              signal: controller.signal,
+            }
+          );
+
+          if (attempt.ok) {
+            upstreamRes = attempt;
+            break;
+          }
+
+          lastErrText = await attempt.text().catch(() => '');
+          if (attempt.status === 404) {
+            continue;
+          }
+
+          upstreamRes = attempt;
+          break;
+        } catch (e) {
+          if (e.name === 'AbortError') throw e;
         }
-      );
+      }
 
       clearTimeout(timeoutId);
+
+      if (!upstreamRes || !upstreamRes.ok) {
+        const status = upstreamRes ? upstreamRes.status : 502;
+        if (lastErrText.includes('API_KEY_INVALID') || lastErrText.includes('API key not valid')) {
+          return res.status(400).json({ error: 'API Key Gemini tidak valid. Silakan periksa kembali API Key Anda. [E-KEY-INVALID]' });
+        }
+        if (status === 429) return res.status(429).json({ error: 'Kuota sedang habis. Coba lagi sebentar lagi.' });
+        if (status === 404) return res.status(502).json({ error: 'Mode ini tidak tersedia untuk akun server. [E-404]' });
+        return res.status(502).json({ error: `Permintaan ditolak (E-${status}). ${scrub(lastErrText)}` });
+      }
 
       const rText = await upstreamRes.text();
       let data;
