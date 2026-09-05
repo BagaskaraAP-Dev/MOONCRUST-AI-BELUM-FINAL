@@ -677,6 +677,22 @@ function init() {
     btnExportTop.addEventListener('click', exportCurrentChat);
   }
 
+  const btnClearCache = el('#btnClearCache');
+  if (btnClearCache) {
+    btnClearCache.addEventListener('click', () => {
+      if (confirm('Bersihkan semua cache dan muat ulang halaman?')) {
+        try {
+          localStorage.clear();
+          sessionStorage.clear();
+          if ('caches' in window) {
+            caches.keys().then(keys => keys.forEach(k => caches.delete(k)));
+          }
+        } catch(e) {}
+        window.location.href = window.location.pathname + '?nocache=' + Date.now();
+      }
+    });
+  }
+
   if (D.micBtn) {
     D.micBtn.addEventListener('click', toggleMic);
   }
