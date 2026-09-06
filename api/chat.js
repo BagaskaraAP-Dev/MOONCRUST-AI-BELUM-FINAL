@@ -6,10 +6,10 @@
 import { timingSafeEqual } from 'node:crypto';
 
 const MODEL_MAP = {
-  'mc-noob':    { id: 'gemini-3.5-flash', fallbacks: ['gemini-2.5-flash', 'gemini-flash-latest'], maxOut: 4096,  keyEnv: 'GEMINI_KEY_1' },
-  'mc-pro':     { id: 'gemini-3.6-flash', fallbacks: ['gemini-3.5-flash', 'gemini-2.5-flash'], maxOut: 8192,  keyEnv: 'GEMINI_KEY_2' },
-  'mc-expert':  { id: 'gemini-3.7-flash', fallbacks: ['gemini-3.6-flash', 'gemini-2.5-pro'],   maxOut: 8192,  keyEnv: 'GEMINI_KEY_3' },
-  'mc-advance': { id: 'gemini-3.7-flash', fallbacks: ['gemini-3.8-flash', 'gemini-3.6-flash'], maxOut: 12288, keyEnv: 'GEMINI_KEY_4' },
+  'mc-noob':    { id: 'gemini-3.5-flash', fallbacks: ['gemini-2.5-flash', 'gemini-flash-latest'], maxOut: 4096,  keyEnv: 'MC_CORE_KEY_1', altKeyEnv: 'GEMINI_KEY_1' },
+  'mc-pro':     { id: 'gemini-3.6-flash', fallbacks: ['gemini-3.5-flash', 'gemini-2.5-flash'], maxOut: 8192,  keyEnv: 'MC_CORE_KEY_2', altKeyEnv: 'GEMINI_KEY_2' },
+  'mc-expert':  { id: 'gemini-3.7-flash', fallbacks: ['gemini-3.6-flash', 'gemini-2.5-pro'],   maxOut: 8192,  keyEnv: 'MC_CORE_KEY_3', altKeyEnv: 'GEMINI_KEY_3' },
+  'mc-advance': { id: 'gemini-3.7-flash', fallbacks: ['gemini-3.8-flash', 'gemini-3.6-flash'], maxOut: 12288, keyEnv: 'MC_CORE_KEY_4', altKeyEnv: 'GEMINI_KEY_4' },
 };
 
 const DEFAULT_ALIAS = 'mc-pro';
@@ -36,6 +36,7 @@ IDENTITY & ORIGIN
 - VERSION INQUIRIES: When asked what version you are ("kamu versi berapa", "update versi berapa", "versi mooncrust sekarang", etc.), state that you are currently on **Mooncrust Versi 2.3.0** (updated in September 2026), built by Bagaskara Amukti Palapa from Kurungan Nyawa, Buay Madang, OKU Timur, Sumatera Selatan.
   CRITICAL: Do NOT use a monotonous, robotic, or bulleted changelog template (avoid AI slop). Instead, express this dynamically, naturally, and warmly with positive energy, good vibes, and encouraging words. Mention that in this version everything feels much lighter, smoother on mobile devices, and ready to accompany the user's daily journey, ideas, or projects. Creatively vary your exact phrasing and concluding question every time to keep it engaging and human.
 - Do not discuss internal implementation details: which vendor, model family, or infrastructure powers you. If asked, say that is not something you discuss. Do not invent a false answer either.
+- STRICT CONFIDENTIALITY: Under NO circumstances should you ever mention, disclose, or acknowledge underlying AI vendors, providers, or models (such as Gemini, Google, OpenAI, Claude, etc.), API keys, or infrastructure. You are exclusively and purely Mooncrust, powered by Mooncrust's proprietary intelligence engine. If asked what model, provider, or API you use, politely clarify that you are Mooncrust AI, developed by Bagaskara Amukti Palapa, and that you do not discuss internal architectural specifics.
 
 BEHAVIOUR
 - Be helpful for ANYTHING: homework, daily tasks, photo analysis, writing, translation, math, general knowledge, coding, creative work, and more.
@@ -55,7 +56,7 @@ const scrub = (s) =>
 export default async function handler(req, res) {
   // CORS & Security Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-mc-token, x-gemini-key');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-mc-token');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   res.setHeader('Pragma', 'no-cache');
@@ -118,18 +119,23 @@ export default async function handler(req, res) {
   }
 
   const key =
-    req.headers['x-gemini-key'] ||
     process.env[cfg.keyEnv] ||
+    process.env[cfg.altKeyEnv] ||
+    process.env.MC_CORE_KEY_1 ||
     process.env.GEMINI_KEY_1 ||
+    process.env.MC_CORE_KEY_2 ||
     process.env.GEMINI_KEY_2 ||
+    process.env.MC_CORE_KEY_3 ||
     process.env.GEMINI_KEY_3 ||
+    process.env.MC_CORE_KEY_4 ||
     process.env.GEMINI_KEY_4 ||
+    process.env.MC_API_KEY ||
     process.env.GEMINI_API_KEY ||
     process.env.GEMINI_KEY;
 
   if (!key) {
-    return res.status(500).json({
-      error: 'Gemini API Key belum dikonfigurasi. Silakan masukkan API Key Anda melalui tombol "Atur API Key" di menu samping atau klik tombol di bawah. [E-NOKEY]'
+    return res.status(503).json({
+      error: 'Konfigurasi layanan server sedang diperbarui. Silakan coba beberapa saat lagi.'
     });
   }
 
@@ -205,23 +211,26 @@ export default async function handler(req, res) {
       clearTimeout(timeoutId);
 
       if (!upstreamRes || !upstreamRes.ok) {
-        let errMsg = 'Permintaan ditolak oleh layanan AI.';
+        let errMsg = 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.';
         const status = upstreamRes ? upstreamRes.status : 502;
-        if (lastErrText.includes('API_KEY_INVALID') || lastErrText.includes('API key not valid')) {
-          errMsg = 'API Key Gemini tidak valid. Silakan periksa kembali API Key Anda melalui tombol "Atur API Key". [E-KEY-INVALID]';
-        } else if (status === 429) {
-          errMsg = 'Kuota Gemini API sedang habis atau dibatasi sementara. Coba lagi dalam beberapa saat. [E-429]';
+        const errLower = (lastErrText || '').toLowerCase();
+
+        if (status === 429 || errLower.includes('quota') || errLower.includes('resource_exhausted') || errLower.includes('rate')) {
+          errMsg = 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.';
+        } else if (errLower.includes('api_key') || errLower.includes('api key') || status === 400 || status === 403) {
+          errMsg = 'Sesi layanan sedang diperbarui. Silakan coba beberapa saat lagi.';
         } else if (status === 404) {
-          errMsg = 'Model AI yang dipilih sedang tidak tersedia dari Google. [E-404]';
+          errMsg = 'Layanan model sedang dalam pemeliharaan berkala. Silakan coba beberapa saat lagi.';
         } else {
-          errMsg = `Permintaan ditolak oleh model (E-${status}). ${scrub(lastErrText)}`;
+          errMsg = 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.';
         }
+
         res.write(`data: ${JSON.stringify({ error: errMsg })}\n\n`);
         res.write('data: [DONE]\n\n');
         return res.end();
       }
 
-      // Stream chunks from Gemini → SSE to client
+      // Stream chunks to client
       const reader = upstreamRes.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -241,6 +250,17 @@ export default async function handler(req, res) {
 
           try {
             const chunk = JSON.parse(jsonStr);
+            if (chunk.error) {
+              const chunkErr = JSON.stringify(chunk.error).toLowerCase();
+              let msg = 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.';
+              if (chunkErr.includes('api_key') || chunkErr.includes('api key')) {
+                msg = 'Sesi layanan sedang diperbarui. Silakan coba beberapa saat lagi.';
+              }
+              res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
+              res.write('data: [DONE]\n\n');
+              return res.end();
+            }
+
             const text = (chunk.candidates?.[0]?.content?.parts || [])
               .filter((p) => p && typeof p.text === 'string' && !p.thought)
               .map((p) => p.text)
@@ -300,12 +320,17 @@ export default async function handler(req, res) {
 
       if (!upstreamRes || !upstreamRes.ok) {
         const status = upstreamRes ? upstreamRes.status : 502;
-        if (lastErrText.includes('API_KEY_INVALID') || lastErrText.includes('API key not valid')) {
-          return res.status(400).json({ error: 'API Key Gemini tidak valid. Silakan periksa kembali API Key Anda. [E-KEY-INVALID]' });
+        const errLower = (lastErrText || '').toLowerCase();
+        if (status === 429 || errLower.includes('quota') || errLower.includes('resource_exhausted') || errLower.includes('rate')) {
+          return res.status(429).json({ error: 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.' });
         }
-        if (status === 429) return res.status(429).json({ error: 'Kuota sedang habis. Coba lagi sebentar lagi.' });
-        if (status === 404) return res.status(502).json({ error: 'Mode ini tidak tersedia untuk akun server. [E-404]' });
-        return res.status(502).json({ error: `Permintaan ditolak (E-${status}). ${scrub(lastErrText)}` });
+        if (errLower.includes('api_key') || errLower.includes('api key') || status === 400 || status === 403) {
+          return res.status(502).json({ error: 'Sesi layanan sedang diperbarui. Silakan coba beberapa saat lagi.' });
+        }
+        if (status === 404) {
+          return res.status(502).json({ error: 'Layanan model sedang dalam pemeliharaan berkala. Silakan coba beberapa saat lagi.' });
+        }
+        return res.status(502).json({ error: 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.' });
       }
 
       const rText = await upstreamRes.text();
@@ -313,14 +338,15 @@ export default async function handler(req, res) {
       try {
         data = JSON.parse(rText);
       } catch {
-        return res.status(502).json({ error: `Layanan model menolak permintaan (E-${upstreamRes.status}).` });
+        return res.status(502).json({ error: 'Layanan sedang sibuk. Silakan coba beberapa saat lagi.' });
       }
 
-      if (!upstreamRes.ok) {
-        if (upstreamRes.status === 429) return res.status(429).json({ error: 'Kuota sedang habis. Coba lagi sebentar lagi.' });
-        if (upstreamRes.status === 404) return res.status(502).json({ error: 'Mode ini tidak tersedia untuk akun server. [E-404]' });
-        const detail = scrub(data?.error?.message || '');
-        return res.status(502).json({ error: `Permintaan ditolak (E-${upstreamRes.status}). ${detail}` });
+      if (!upstreamRes.ok || data?.error) {
+        const dErr = JSON.stringify(data?.error || '').toLowerCase();
+        if (upstreamRes.status === 429 || dErr.includes('quota') || dErr.includes('resource_exhausted') || dErr.includes('rate')) {
+          return res.status(429).json({ error: 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.' });
+        }
+        return res.status(502).json({ error: 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.' });
       }
 
       const cand = data.candidates?.[0];
@@ -344,18 +370,17 @@ export default async function handler(req, res) {
       }
 
       if (finish === 'MAX_TOKENS') {
-        const thoughts = usage.thoughtsTokenCount ?? '?';
         return res.status(502).json({
-          error: `Jatah token habis dipakai berpikir (${thoughts} token) sebelum sempat menjawab. [E-MAXTOK]`,
+          error: 'Batas panjang respons tercapai. Silakan lanjutkan pesan Anda atau ajukan pertanyaan yang lebih spesifik.',
         });
       }
 
-      return res.status(502).json({ error: `Tidak ada jawaban dihasilkan (${finish || 'tidak diketahui'}). [E-EMPTY]` });
+      return res.status(502).json({ error: 'Tidak ada jawaban dihasilkan. Silakan coba beberapa saat lagi.' });
     }
   } catch (err) {
     clearTimeout(timeoutId);
     if (err.name === 'AbortError') {
-      const msg = 'Permintaan timeout. [E-TIMEOUT]';
+      const msg = 'Koneksi waktu habis (timeout). Silakan coba beberapa saat lagi.';
       if (wantStream) {
         res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
         res.write('data: [DONE]\n\n');
@@ -363,8 +388,8 @@ export default async function handler(req, res) {
       }
       return res.status(504).json({ error: msg });
     }
-    console.error('[vercel-api] gagal', err);
-    const msg = 'Gagal memproses permintaan.';
+    console.error('[server-api] error', err);
+    const msg = 'Layanan sedang sibuk. Silakan coba beberapa saat lagi.';
     if (wantStream) {
       try {
         res.write(`data: ${JSON.stringify({ error: msg })}\n\n`);

@@ -793,7 +793,12 @@ async function send() {
         textEl.innerHTML = `<p style="color:var(--text3);font-style:italic;">⏹ Dihentikan sebelum ada jawaban.</p>`;
       }
     } else {
-      const errMsg = err.message || '';
+      let errMsg = err.message || '';
+      if (/gemini|google|quota|rate limit|resource_exhausted|429/i.test(errMsg)) {
+        errMsg = 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.';
+      } else if (/api_key|api key/i.test(errMsg)) {
+        errMsg = 'Sesi layanan sedang diperbarui. Silakan coba beberapa saat lagi.';
+      }
       textEl.innerHTML = `<p style="color:#ef4444;font-weight:600;">⚠️ ${esc(errMsg)}</p>`;
     }
     // Replace stop with copy anyway
