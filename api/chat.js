@@ -3,7 +3,7 @@
  * SSE Streaming, multimodal (image), fail-closed auth, timing-safe comparison
  */
 
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
 
@@ -108,10 +108,9 @@ async function isRateLimited(req) {
 }
 
 function safeEq(a, b) {
-  const A = Buffer.from(String(a || ''));
-  const B = Buffer.from(String(b || ''));
-  if (A.length !== B.length) return false;
-  return timingSafeEqual(A, B);
+  const hashA = createHash('sha256').update(String(a || '')).digest();
+  const hashB = createHash('sha256').update(String(b || '')).digest();
+  return timingSafeEqual(hashA, hashB);
 }
 
 function buildSystemPrompt() {
