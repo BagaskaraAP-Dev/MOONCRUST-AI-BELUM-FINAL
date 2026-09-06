@@ -7,6 +7,30 @@
       "maxDuration": 60
     }
   },
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "mooncrust-chatbot.vercel.app"
+        }
+      ],
+      "destination": "https://mooncrust-ai.vercel.app/:path*",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "has": [
+        {
+          "type": "host",
+          "value": "mooncrustchatbot.vercel.app"
+        }
+      ],
+      "destination": "https://mooncrust-ai.vercel.app/:path*",
+      "permanent": true
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",

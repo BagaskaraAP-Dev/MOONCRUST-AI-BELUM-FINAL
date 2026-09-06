@@ -22,20 +22,22 @@ const MAX_CHARS = 8000;            // Batas total karakter konteks riwayat
 const MAX_IMAGE_B64_LEN = 2_800_000; // ~2.1MB raw after base64 decode
 const MAX_FAILOVER_ATTEMPTS = 4;   // Batas maksimal percobaan failover model/key per request
 
-// ===== RATE LIMITING ENGINE (Upstash Redis + In-Memory Fallback) =====
+// ===== RATE LIMITING & AUTH LOCKOUT ENGINE =====
+let redisClient = null;
 let upstashLimiter = null;
+
 if (
   (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) ||
   (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN)
 ) {
   try {
-    const redis = new Redis({
+    redisClient = new Redis({
       url: process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL,
       token: process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN,
     });
     upstashLimiter = new Ratelimit({
-      redis,
-      limiter: Ratelimit.slidingWindow(10, '60 s'),
+      redis: redisClient,
+      limiter: Ratelimit.slidingWindow(15, '60 s'),
       analytics: true,
       prefix: 'mc_ratelimit',
     });
@@ -44,9 +46,9 @@ if (
   }
 }
 
-// In-Memory sliding window rate limiter fallback (10 req / 60s per IP)
+// In-Memory sliding window rate limiter fallback (15 req / 60s per IP)
 const memoryRateLimits = new Map();
-const MEM_LIMIT = 10;
+const MEM_LIMIT = 15;
 const MEM_WINDOW_MS = 60 * 1000;
 
 function checkMemoryRateLimit(ip) {
@@ -67,6 +69,72 @@ function checkMemoryRateLimit(ip) {
     }
   }
   return { success: true, remaining: MEM_LIMIT - timestamps.length };
+}
+
+// ===== BRUTE-FORCE LOCKOUT PROTECTION =====
+// Batasi maksimal 5 percobaan gagal per 10 menit (600 detik) per IP
+const MAX_AUTH_FAILS = 5;
+const AUTH_LOCKOUT_WINDOW_S = 600;
+const memoryAuthFails = new Map(); // ip -> { count, expiresAt }
+
+async function isAuthLocked(ip) {
+  if (redisClient) {
+    try {
+      const fails = await redisClient.get(`mc_fail:${ip}`);
+      if (fails !== null && Number(fails) >= MAX_AUTH_FAILS) {
+        return true;
+      }
+    } catch (e) {
+      console.warn('[auth-lock] Redis get error:', e.message);
+    }
+  }
+  const mem = memoryAuthFails.get(ip);
+  if (mem) {
+    if (Date.now() < mem.expiresAt) {
+      return mem.count >= MAX_AUTH_FAILS;
+    } else {
+      memoryAuthFails.delete(ip);
+    }
+  }
+  return false;
+}
+
+async function recordAuthFailure(ip) {
+  let count = 1;
+  if (redisClient) {
+    try {
+      const key = `mc_fail:${ip}`;
+      count = await redisClient.incr(key);
+      if (count === 1) {
+        await redisClient.expire(key, AUTH_LOCKOUT_WINDOW_S);
+      }
+    } catch (e) {
+      console.warn('[auth-lock] Redis incr error:', e.message);
+    }
+  }
+  const now = Date.now();
+  const mem = memoryAuthFails.get(ip);
+  if (mem && now < mem.expiresAt) {
+    mem.count += 1;
+    count = Math.max(count, mem.count);
+  } else {
+    memoryAuthFails.set(ip, {
+      count: 1,
+      expiresAt: now + AUTH_LOCKOUT_WINDOW_S * 1000,
+    });
+  }
+  return count;
+}
+
+async function clearAuthFailure(ip) {
+  if (redisClient) {
+    try {
+      await redisClient.del(`mc_fail:${ip}`);
+    } catch (e) {
+      console.warn('[auth-lock] Redis del error:', e.message);
+    }
+  }
+  memoryAuthFails.delete(ip);
 }
 
 function getClientIp(req) {
@@ -114,6 +182,20 @@ function safeEq(a, b) {
   return timingSafeEqual(hashA, hashB);
 }
 
+// ===== CORS VALIDATION =====
+const ALLOWED_ORIGIN_REGEX = /^https:\/\/(mooncrust-ai(-[a-z0-9-]+)?\.vercel\.app|localhost:[0-9]+|127\.0\.0\.1:[0-9]+)$/;
+
+function getCorsOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) {
+    return 'https://mooncrust-ai.vercel.app';
+  }
+  if (ALLOWED_ORIGIN_REGEX.test(origin) || origin === 'https://mooncrust-ai.vercel.app') {
+    return origin;
+  }
+  return null;
+}
+
 function buildSystemPrompt() {
   const now = new Date()
     .toLocaleString('en-GB', { timeZone: 'Asia/Jakarta' })
@@ -145,30 +227,67 @@ const scrub = (s) =>
 
 export default async function handler(req, res) {
   // CORS & Security Headers
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const corsOrigin = getCorsOrigin(req);
+  if (corsOrigin) {
+    res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-mc-token');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   res.setHeader('Pragma', 'no-cache');
 
   if (req.method === 'OPTIONS') {
+    if (req.headers.origin && !corsOrigin) {
+      return res.status(403).end();
+    }
     return res.status(200).end();
   }
 
-  // 1. GAGAL-TERTUTUP (Fail-Closed) — tanpa APP_SECRET di env, tolak semua request
+  const clientIp = getClientIp(req);
+
+  // 1. Lockout Check (Anti Brute-Force): Blokir IP jika sudah 5x salah token
+  const locked = await isAuthLocked(clientIp);
+  if (locked) {
+    res.setHeader('Retry-After', String(AUTH_LOCKOUT_WINDOW_S));
+    return res.status(429).json({
+      error: 'Terlalu banyak percobaan autentikasi yang gagal. Akses dibatasi selama 10 menit.',
+    });
+  }
+
+  // 2. Pre-Auth Rate Limiting per IP (Anti Flooding / DoS)
+  const rateCheck = await isRateLimited(req);
+  if (!rateCheck.success) {
+    res.setHeader('Retry-After', '60');
+    return res.status(429).json({
+      error: 'Token sedang habis, tunggu beberapa saat.',
+    });
+  }
+
+  // 3. GAGAL-TERTUTUP (Fail-Closed) — tanpa APP_SECRET di env, tolak semua request
   const APP_SECRET = process.env.APP_SECRET;
   if (!APP_SECRET) {
     console.error('[api] APP_SECRET belum dikonfigurasi di environment server.');
     return res.status(503).json({ error: 'Server belum dikonfigurasi.' });
   }
 
-  // 2. Autentikasi Timing-Safe
+  // 4. Autentikasi Timing-Safe & Failed Attempt Tracking
   const clientToken = req.headers['x-mc-token'];
   if (!safeEq(clientToken, APP_SECRET)) {
+    const failCount = await recordAuthFailure(clientIp);
+    if (failCount >= MAX_AUTH_FAILS) {
+      res.setHeader('Retry-After', String(AUTH_LOCKOUT_WINDOW_S));
+      return res.status(429).json({
+        error: 'Terlalu banyak percobaan autentikasi yang gagal. Akses dibatasi selama 10 menit.',
+      });
+    }
     return res.status(401).json({ error: 'Akses ditolak.' });
   }
 
-  // 3. Health check DI BALIK gerbang autentikasi
+  // Autentikasi sukses -> bersihkan catatan gagal untuk IP ini
+  await clearAuthFailure(clientIp);
+
+  // 5. Health check DI BALIK gerbang autentikasi
   if (req.method === 'GET') {
     return res.status(200).json({
       status: 'online',
@@ -179,15 +298,6 @@ export default async function handler(req, res) {
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Metode tidak didukung.' });
-  }
-
-  // 3. Rate Limiting per IP (Upstash Redis + sliding window fallback, 10 req/menit)
-  const rateCheck = await isRateLimited(req);
-  if (!rateCheck.success) {
-    res.setHeader('Retry-After', '60');
-    return res.status(429).json({
-      error: 'Token sedang habis, tunggu beberapa saat.'
-    });
   }
 
   const body = req.body || {};

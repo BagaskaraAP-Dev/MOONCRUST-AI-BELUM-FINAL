@@ -999,6 +999,11 @@ function init() {
         pinInput.focus();
         return;
       }
+      if (r.status === 429) {
+        const errJson = await r.json().catch(() => ({}));
+        pinError.textContent = errJson.error || 'Terlalu banyak percobaan. Akses dibatasi sementara.';
+        return;
+      }
       if (r.status === 503) {
         pinError.textContent = 'Server belum dikonfigurasi (APP_SECRET kosong).';
         return;
