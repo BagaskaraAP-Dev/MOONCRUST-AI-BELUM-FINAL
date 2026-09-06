@@ -4,6 +4,8 @@
  */
 
 import { timingSafeEqual } from 'node:crypto';
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
 
 const MODEL_MAP = {
   'mc-noob':    { id: 'gemini-3.5-flash', fallbacks: ['gemini-2.5-flash', 'gemini-flash-latest'], maxOut: 4096,  keyEnv: 'MC_CORE_KEY_1', altKeyEnv: 'GEMINI_KEY_1' },
@@ -14,8 +16,83 @@ const MODEL_MAP = {
 
 const DEFAULT_ALIAS = 'mc-pro';
 const UPSTREAM_TIMEOUT_MS = 55000;
-const MAX_CHARS = 12000;
+const MAX_USER_INPUT_CHARS = 4000; // Maksimal 4000 karakter per pesan user
+const MAX_HISTORY_MESSAGES = 10;   // Potong ke 10 pesan percakapan terakhir
+const MAX_CHARS = 8000;            // Batas total karakter konteks riwayat
 const MAX_IMAGE_B64_LEN = 2_800_000; // ~2.1MB raw after base64 decode
+
+// ===== RATE LIMITING ENGINE (Upstash Redis + In-Memory Fallback) =====
+let upstashLimiter = null;
+if (
+  (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) ||
+  (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN)
+) {
+  try {
+    const redis = new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN,
+    });
+    upstashLimiter = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(10, '60 s'),
+      analytics: true,
+      prefix: 'mc_ratelimit',
+    });
+  } catch (e) {
+    console.warn('[ratelimit] Gagal inisialisasi Upstash:', e.message);
+  }
+}
+
+// In-Memory sliding window rate limiter fallback (10 req / 60s per IP)
+const memoryRateLimits = new Map();
+const MEM_LIMIT = 10;
+const MEM_WINDOW_MS = 60 * 1000;
+
+function checkMemoryRateLimit(ip) {
+  const now = Date.now();
+  let timestamps = memoryRateLimits.get(ip) || [];
+  timestamps = timestamps.filter((t) => now - t < MEM_WINDOW_MS);
+  if (timestamps.length >= MEM_LIMIT) {
+    memoryRateLimits.set(ip, timestamps);
+    return { success: false, remaining: 0, reset: timestamps[0] + MEM_WINDOW_MS };
+  }
+  timestamps.push(now);
+  memoryRateLimits.set(ip, timestamps);
+  if (memoryRateLimits.size > 2000) {
+    for (const [k, v] of memoryRateLimits.entries()) {
+      if (v.length === 0 || now - v[v.length - 1] > MEM_WINDOW_MS) {
+        memoryRateLimits.delete(k);
+      }
+    }
+  }
+  return { success: true, remaining: MEM_LIMIT - timestamps.length };
+}
+
+function getClientIp(req) {
+  const fwd = req.headers['x-forwarded-for'];
+  if (fwd) {
+    return String(fwd).split(',')[0].trim();
+  }
+  return (
+    req.headers['x-real-ip'] ||
+    req.socket?.remoteAddress ||
+    req.connection?.remoteAddress ||
+    '127.0.0.1'
+  );
+}
+
+async function isRateLimited(req) {
+  const ip = getClientIp(req);
+  if (upstashLimiter) {
+    try {
+      return await upstashLimiter.limit(ip);
+    } catch (err) {
+      console.warn('[ratelimit] Upstash limit error, fallback to memory:', err.message);
+      return checkMemoryRateLimit(ip);
+    }
+  }
+  return checkMemoryRateLimit(ip);
+}
 
 function safeEq(a, b) {
   const A = Buffer.from(String(a || ''));
@@ -91,17 +168,36 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Metode tidak didukung.' });
   }
 
+  // 3. Rate Limiting per IP (Upstash Redis + sliding window fallback, 10 req/menit)
+  const rateCheck = await isRateLimited(req);
+  if (!rateCheck.success) {
+    res.setHeader('Retry-After', '60');
+    return res.status(429).json({
+      error: 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.'
+    });
+  }
+
   const body = req.body || {};
   const messages = Array.isArray(body.messages) ? body.messages : [];
   if (messages.length === 0) {
     return res.status(400).json({ error: 'Tidak ada pesan yang dikirim.' });
   }
 
+  // 4. Batas input user per pesan (maks 4000 karakter)
+  const lastUserMsg = [...messages].reverse().find((m) => m && m.role === 'user');
+  if (lastUserMsg && String(lastUserMsg.content || '').length > MAX_USER_INPUT_CHARS) {
+    return res.status(400).json({
+      error: `Pesan terlalu panjang. Maksimal ${MAX_USER_INPUT_CHARS} karakter per pesan.`
+    });
+  }
+
   const alias = MODEL_MAP[body.model] ? body.model : DEFAULT_ALIAS;
   const cfg = MODEL_MAP[alias];
-  const trimmed = messages.filter((m) => m && m.role !== 'system').slice(-20);
 
-  // 4. Batasan Total Karakter (Anti Token-Exhaustion)
+  // 5. Potong riwayat ke 10 pesan terakhir (sliding context)
+  const trimmed = messages.filter((m) => m && m.role !== 'system').slice(-MAX_HISTORY_MESSAGES);
+
+  // 6. Batasan Total Karakter Riwayat (Anti Token-Exhaustion)
   const totalChars = trimmed.reduce((n, m) => n + String(m.content ?? '').length, 0);
   if (totalChars > MAX_CHARS) {
     return res.status(413).json({ error: 'Percakapan terlalu panjang. Mulai chat baru.' });
