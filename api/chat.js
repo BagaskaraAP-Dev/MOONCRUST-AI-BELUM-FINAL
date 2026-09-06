@@ -182,14 +182,19 @@ function safeEq(a, b) {
 }
 
 // ===== CORS VALIDATION =====
-const ALLOWED_ORIGIN_REGEX = /^https:\/\/(mooncrust-ai(-[a-z0-9-]+)?\.vercel\.app|localhost:[0-9]+|127\.0\.0\.1:[0-9]+)$/;
+const ALLOWED_ORIGIN_REGEX = /^https:\/\/(mooncrust-ai(-[a-z0-9-]+)?\.vercel\.app|mooncrust\.my\.id|www\.mooncrust\.my\.id|localhost:[0-9]+|127\.0\.0\.1:[0-9]+)$/;
 
 function getCorsOrigin(req) {
   const origin = req.headers.origin;
   if (!origin) {
-    return 'https://mooncrust-ai.vercel.app';
+    return 'https://mooncrust.my.id';
   }
-  if (ALLOWED_ORIGIN_REGEX.test(origin) || origin === 'https://mooncrust-ai.vercel.app') {
+  if (
+    ALLOWED_ORIGIN_REGEX.test(origin) ||
+    origin === 'https://mooncrust.my.id' ||
+    origin === 'https://www.mooncrust.my.id' ||
+    origin === 'https://mooncrust-ai.vercel.app'
+  ) {
     return origin;
   }
   return null;
