@@ -927,21 +927,23 @@ function init() {
     });
   }
 
-  D.menuBtn.addEventListener('click', () => {
+  D.menuBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
     const isOpen = D.sidebar.classList.toggle('open');
-    let ov = document.querySelector('.sidebar-overlay');
-    if (!ov) {
-      ov = document.createElement('div');
-      ov.className = 'sidebar-overlay';
-      document.body.appendChild(ov);
-      ov.addEventListener('click', closeSidebar);
-    }
-    if (isOpen) {
-      ov.classList.add('show');
-    } else {
-      ov.classList.remove('show');
+    const ov = document.getElementById('sidebarOverlay') || document.querySelector('.sidebar-overlay');
+    if (ov) {
+      if (isOpen) {
+        ov.classList.add('show');
+      } else {
+        ov.classList.remove('show');
+      }
     }
   });
+
+  const sidebarOverlay = document.getElementById('sidebarOverlay');
+  if (sidebarOverlay) {
+    sidebarOverlay.addEventListener('click', closeSidebar);
+  }
 
   D.closePreview.addEventListener('click', () => {
     D.previewModal.classList.remove('show');
