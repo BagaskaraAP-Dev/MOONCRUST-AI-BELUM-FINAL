@@ -20,6 +20,7 @@ const MAX_USER_INPUT_CHARS = 4000; // Maksimal 4000 karakter per pesan user
 const MAX_HISTORY_MESSAGES = 10;   // Potong ke 10 pesan percakapan terakhir
 const MAX_CHARS = 8000;            // Batas total karakter konteks riwayat
 const MAX_IMAGE_B64_LEN = 2_800_000; // ~2.1MB raw after base64 decode
+const MAX_FAILOVER_ATTEMPTS = 4;   // Batas maksimal percobaan failover model/key per request
 
 // ===== RATE LIMITING ENGINE (Upstash Redis + In-Memory Fallback) =====
 let upstashLimiter = null;
@@ -279,9 +280,11 @@ export default async function handler(req, res) {
 
       let upstreamRes = null;
       let lastErrText = '';
+      let attempts = 0;
 
       keyLoop: for (const k of uniqueKeys) {
         for (const modelId of candidateModelIds) {
+          if (++attempts > MAX_FAILOVER_ATTEMPTS) break keyLoop;
           try {
             const attempt = await fetch(
               `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:streamGenerateContent?alt=sse`,
@@ -390,9 +393,11 @@ export default async function handler(req, res) {
       // ===== NON-STREAMING FALLBACK =====
       let upstreamRes = null;
       let lastErrText = '';
+      let attempts = 0;
 
       keyLoopNonStream: for (const k of uniqueKeys) {
         for (const modelId of candidateModelIds) {
+          if (++attempts > MAX_FAILOVER_ATTEMPTS) break keyLoopNonStream;
           try {
             const attempt = await fetch(
               `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`,
