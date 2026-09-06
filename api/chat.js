@@ -81,11 +81,10 @@ async function isAuthLocked(ip) {
   if (redisClient) {
     try {
       const fails = await redisClient.get(`mc_fail:${ip}`);
-      if (fails !== null && Number(fails) >= MAX_AUTH_FAILS) {
-        return true;
-      }
+      if (fails === null) return false;
+      return Number(fails) >= MAX_AUTH_FAILS;
     } catch (e) {
-      console.warn('[auth-lock] Redis get error:', e.message);
+      console.warn('[auth-lock] Redis get error, fallback to memory:', e.message);
     }
   }
   const mem = memoryAuthFails.get(ip);
