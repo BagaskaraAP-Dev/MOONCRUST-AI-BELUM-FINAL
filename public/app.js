@@ -823,8 +823,8 @@ async function send() {
       }
     } else {
       let errMsg = err.message || '';
-      if (/gemini|google|quota|rate limit|resource_exhausted|429/i.test(errMsg)) {
-        errMsg = 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.';
+      if (/gemini|google|quota|rate limit|resource_exhausted|429|token/i.test(errMsg)) {
+        errMsg = 'Token sedang habis, tunggu beberapa saat.';
       } else if (/api_key|api key/i.test(errMsg)) {
         errMsg = 'Sesi layanan sedang diperbarui. Silakan coba beberapa saat lagi.';
       }

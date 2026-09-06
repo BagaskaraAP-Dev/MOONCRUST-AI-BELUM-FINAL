@@ -185,7 +185,7 @@ export default async function handler(req, res) {
   if (!rateCheck.success) {
     res.setHeader('Retry-After', '60');
     return res.status(429).json({
-      error: 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.'
+      error: 'Token sedang habis, tunggu beberapa saat.'
     });
   }
 
@@ -319,18 +319,18 @@ export default async function handler(req, res) {
       clearTimeout(timeoutId);
 
       if (!upstreamRes || !upstreamRes.ok) {
-        let errMsg = 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.';
+        let errMsg = 'Token sedang habis, tunggu beberapa saat.';
         const status = upstreamRes ? upstreamRes.status : 502;
         const errLower = (lastErrText || '').toLowerCase();
 
         if (status === 429 || errLower.includes('quota') || errLower.includes('resource_exhausted') || errLower.includes('rate')) {
-          errMsg = 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.';
+          errMsg = 'Token sedang habis, tunggu beberapa saat.';
         } else if (errLower.includes('api_key') || errLower.includes('api key') || status === 400 || status === 403) {
           errMsg = 'Sesi layanan sedang diperbarui. Silakan coba beberapa saat lagi.';
         } else if (status === 404) {
           errMsg = 'Layanan model sedang dalam pemeliharaan berkala. Silakan coba beberapa saat lagi.';
         } else {
-          errMsg = 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.';
+          errMsg = 'Token sedang habis, tunggu beberapa saat.';
         }
 
         res.write(`data: ${JSON.stringify({ error: errMsg })}\n\n`);
@@ -360,7 +360,7 @@ export default async function handler(req, res) {
             const chunk = JSON.parse(jsonStr);
             if (chunk.error) {
               const chunkErr = JSON.stringify(chunk.error).toLowerCase();
-              let msg = 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.';
+              let msg = 'Token sedang habis, tunggu beberapa saat.';
               if (chunkErr.includes('api_key') || chunkErr.includes('api key')) {
                 msg = 'Sesi layanan sedang diperbarui. Silakan coba beberapa saat lagi.';
               }
@@ -430,7 +430,7 @@ export default async function handler(req, res) {
         const status = upstreamRes ? upstreamRes.status : 502;
         const errLower = (lastErrText || '').toLowerCase();
         if (status === 429 || errLower.includes('quota') || errLower.includes('resource_exhausted') || errLower.includes('rate')) {
-          return res.status(429).json({ error: 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.' });
+          return res.status(429).json({ error: 'Token sedang habis, tunggu beberapa saat.' });
         }
         if (errLower.includes('api_key') || errLower.includes('api key') || status === 400 || status === 403) {
           return res.status(502).json({ error: 'Sesi layanan sedang diperbarui. Silakan coba beberapa saat lagi.' });
@@ -438,7 +438,7 @@ export default async function handler(req, res) {
         if (status === 404) {
           return res.status(502).json({ error: 'Layanan model sedang dalam pemeliharaan berkala. Silakan coba beberapa saat lagi.' });
         }
-        return res.status(502).json({ error: 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.' });
+        return res.status(502).json({ error: 'Token sedang habis, tunggu beberapa saat.' });
       }
 
       const rText = await upstreamRes.text();
@@ -452,9 +452,9 @@ export default async function handler(req, res) {
       if (!upstreamRes.ok || data?.error) {
         const dErr = JSON.stringify(data?.error || '').toLowerCase();
         if (upstreamRes.status === 429 || dErr.includes('quota') || dErr.includes('resource_exhausted') || dErr.includes('rate')) {
-          return res.status(429).json({ error: 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.' });
+          return res.status(429).json({ error: 'Token sedang habis, tunggu beberapa saat.' });
         }
-        return res.status(502).json({ error: 'Waktu sesi token Anda telah habis sementara. Silakan coba beberapa saat lagi.' });
+        return res.status(502).json({ error: 'Token sedang habis, tunggu beberapa saat.' });
       }
 
       const cand = data.candidates?.[0];
