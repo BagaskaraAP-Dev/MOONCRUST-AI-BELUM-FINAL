@@ -8,10 +8,10 @@ import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
 
 const MODEL_MAP = {
-  'mc-noob':    { id: 'gemini-3.5-flash', fallbacks: ['gemini-2.5-flash', 'gemini-flash-latest'], maxOut: 4096,  keyEnv: 'MC_CORE_KEY_1', altKeyEnv: 'GEMINI_KEY_1' },
-  'mc-pro':     { id: 'gemini-3.6-flash', fallbacks: ['gemini-3.5-flash', 'gemini-2.5-flash'], maxOut: 8192,  keyEnv: 'MC_CORE_KEY_2', altKeyEnv: 'GEMINI_KEY_2' },
-  'mc-expert':  { id: 'gemini-3.7-flash', fallbacks: ['gemini-3.6-flash', 'gemini-2.5-pro'],   maxOut: 8192,  keyEnv: 'MC_CORE_KEY_3', altKeyEnv: 'GEMINI_KEY_3' },
-  'mc-advance': { id: 'gemini-3.7-flash', fallbacks: ['gemini-3.8-flash', 'gemini-3.6-flash'], maxOut: 12288, keyEnv: 'MC_CORE_KEY_4', altKeyEnv: 'GEMINI_KEY_4' },
+  'mc-noob':    { id: 'gemini-3.5-flash', fallbacks: ['gemini-3.6-flash', 'gemini-3.7-flash'], maxOut: 4096,  keyEnv: 'MC_CORE_KEY_1', altKeyEnv: 'GEMINI_KEY_1' },
+  'mc-pro':     { id: 'gemini-3.6-flash', fallbacks: ['gemini-3.5-flash', 'gemini-3.7-flash'], maxOut: 8192,  keyEnv: 'MC_CORE_KEY_2', altKeyEnv: 'GEMINI_KEY_2' },
+  'mc-expert':  { id: 'gemini-3.7-flash', fallbacks: ['gemini-3.6-flash', 'gemini-3.5-flash'], maxOut: 8192,  keyEnv: 'MC_CORE_KEY_3', altKeyEnv: 'GEMINI_KEY_3' },
+  'mc-advance': { id: 'gemini-3.7-flash', fallbacks: ['gemini-3.6-flash', 'gemini-3.5-flash'], maxOut: 12288, keyEnv: 'MC_CORE_KEY_4', altKeyEnv: 'GEMINI_KEY_4' },
 };
 
 const DEFAULT_ALIAS = 'mc-pro';
@@ -226,22 +226,20 @@ export default async function handler(req, res) {
     }
   }
 
-  const key =
-    process.env[cfg.keyEnv] ||
-    process.env[cfg.altKeyEnv] ||
-    process.env.MC_CORE_KEY_1 ||
-    process.env.GEMINI_KEY_1 ||
-    process.env.MC_CORE_KEY_2 ||
-    process.env.GEMINI_KEY_2 ||
-    process.env.MC_CORE_KEY_3 ||
-    process.env.GEMINI_KEY_3 ||
-    process.env.MC_CORE_KEY_4 ||
-    process.env.GEMINI_KEY_4 ||
-    process.env.MC_API_KEY ||
-    process.env.GEMINI_API_KEY ||
-    process.env.GEMINI_KEY;
+  const candidateKeys = [
+    process.env[cfg.keyEnv],
+    process.env[cfg.altKeyEnv],
+    process.env.GEMINI_KEY_2,
+    process.env.GEMINI_KEY_3,
+    process.env.GEMINI_KEY_4,
+    process.env.GEMINI_KEY_1,
+    process.env.GEMINI_API_KEY,
+    process.env.GEMINI_KEY,
+  ].filter(Boolean);
 
-  if (!key) {
+  const uniqueKeys = [...new Set(candidateKeys)];
+
+  if (uniqueKeys.length === 0) {
     return res.status(503).json({
       error: 'Konfigurasi layanan server sedang diperbarui. Silakan coba beberapa saat lagi.'
     });
@@ -282,37 +280,39 @@ export default async function handler(req, res) {
       let upstreamRes = null;
       let lastErrText = '';
 
-      for (const modelId of candidateModelIds) {
-        try {
-          const attempt = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:streamGenerateContent?alt=sse`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-              body: JSON.stringify({
-                contents,
-                systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
-                generationConfig,
-              }),
-              signal: controller.signal,
+      keyLoop: for (const k of uniqueKeys) {
+        for (const modelId of candidateModelIds) {
+          try {
+            const attempt = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:streamGenerateContent?alt=sse`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k },
+                body: JSON.stringify({
+                  contents,
+                  systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
+                  generationConfig,
+                }),
+                signal: controller.signal,
+              }
+            );
+
+            if (attempt.ok) {
+              upstreamRes = attempt;
+              break keyLoop;
             }
-          );
 
-          if (attempt.ok) {
+            lastErrText = await attempt.text().catch(() => '');
+            // If 404, 429, or 5xx, try next model or rotate key
+            if (attempt.status === 404 || attempt.status === 429 || attempt.status >= 500) {
+              continue;
+            }
+
             upstreamRes = attempt;
-            break;
+            break keyLoop;
+          } catch (e) {
+            if (e.name === 'AbortError') throw e;
           }
-
-          lastErrText = await attempt.text().catch(() => '');
-          // If 404 (model not found), try next fallback model
-          if (attempt.status === 404) {
-            continue;
-          }
-
-          upstreamRes = attempt;
-          break;
-        } catch (e) {
-          if (e.name === 'AbortError') throw e;
         }
       }
 
@@ -391,36 +391,38 @@ export default async function handler(req, res) {
       let upstreamRes = null;
       let lastErrText = '';
 
-      for (const modelId of candidateModelIds) {
-        try {
-          const attempt = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-              body: JSON.stringify({
-                contents,
-                systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
-                generationConfig,
-              }),
-              signal: controller.signal,
+      keyLoopNonStream: for (const k of uniqueKeys) {
+        for (const modelId of candidateModelIds) {
+          try {
+            const attempt = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': k },
+                body: JSON.stringify({
+                  contents,
+                  systemInstruction: { parts: [{ text: buildSystemPrompt() }] },
+                  generationConfig,
+                }),
+                signal: controller.signal,
+              }
+            );
+
+            if (attempt.ok) {
+              upstreamRes = attempt;
+              break keyLoopNonStream;
             }
-          );
 
-          if (attempt.ok) {
+            lastErrText = await attempt.text().catch(() => '');
+            if (attempt.status === 404 || attempt.status === 429 || attempt.status >= 500) {
+              continue;
+            }
+
             upstreamRes = attempt;
-            break;
+            break keyLoopNonStream;
+          } catch (e) {
+            if (e.name === 'AbortError') throw e;
           }
-
-          lastErrText = await attempt.text().catch(() => '');
-          if (attempt.status === 404) {
-            continue;
-          }
-
-          upstreamRes = attempt;
-          break;
-        } catch (e) {
-          if (e.name === 'AbortError') throw e;
         }
       }
 

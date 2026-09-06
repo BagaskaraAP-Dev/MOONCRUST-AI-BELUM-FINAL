@@ -822,11 +822,19 @@ async function send() {
         textEl.innerHTML = `<p style="color:var(--text3);font-style:italic;">⏹ Dihentikan sebelum ada jawaban.</p>`;
       }
     } else {
-      let errMsg = err.message || '';
-      if (/gemini|google|quota|rate limit|resource_exhausted|429|token/i.test(errMsg)) {
+      let errMsg = String(err.message || '');
+      if (/gemini|google|generativelanguage|quota|rate|resource_exhausted|429|token|e-429|exceeded/i.test(errMsg)) {
         errMsg = 'Token sedang habis, tunggu beberapa saat.';
-      } else if (/api_key|api key/i.test(errMsg)) {
+      } else if (/api_key|api key|kunci|key|e-key|e-nokey|unauthorized/i.test(errMsg)) {
         errMsg = 'Sesi layanan sedang diperbarui. Silakan coba beberapa saat lagi.';
+      } else if (/failed to fetch|networkerror|load failed/i.test(errMsg)) {
+        errMsg = 'Koneksi terputus. Silakan coba beberapa saat lagi.';
+      } else {
+        errMsg = errMsg
+          .replace(/gemini|google|generativelanguage|openai|claude/gi, 'Mooncrust')
+          .replace(/\[E-[^\]]+\]/gi, '')
+          .trim();
+        if (!errMsg) errMsg = 'Token sedang habis, tunggu beberapa saat.';
       }
       textEl.innerHTML = `<p style="color:#ef4444;font-weight:600;">⚠️ ${esc(errMsg)}</p>`;
     }
