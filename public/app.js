@@ -3,6 +3,17 @@
    =================================================== */
 
 marked.setOptions({ breaks: true, gfm: true });
+
+// Anti-XSS Sanitizer Hook: Tambahkan target="_blank" dan rel="noopener noreferrer" pada semua link keluar
+if (typeof DOMPurify !== 'undefined' && DOMPurify.addHook) {
+  DOMPurify.addHook('afterSanitizeAttributes', function (node) {
+    if (node.tagName === 'A' && node.getAttribute('href')) {
+      node.setAttribute('target', '_blank');
+      node.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
+}
+
 function renderMd(txt) {
   if (!txt) return '';
   return DOMPurify.sanitize(marked.parse(txt));
@@ -379,8 +390,8 @@ function appendMsg(m, imageDataUrl) {
 
   const actionsHtml = `
       <div class="msg__actions">
-        <button class="msg-act-btn" onclick="copyMsg('${m.id}', this)">📋 Salin</button>
-        ${m.role === 'assistant' ? `<button class="msg-act-btn" onclick="speakMsg('${m.id}', this)">🔊 Dengar</button>` : ''}
+        <button class="msg-act-btn" data-action="copy-msg" data-msg-id="${m.id}">📋 Salin</button>
+        ${m.role === 'assistant' ? `<button class="msg-act-btn" data-action="speak-msg" data-msg-id="${m.id}">🔊 Dengar</button>` : ''}
       </div>
   `;
 
@@ -420,8 +431,8 @@ function enhanceCode(container) {
       <div class="code-bar">
         <span class="code-lang">${lang}</span>
         <div class="code-btns">
-          ${canRun ? `<button class="code-btn code-btn--run" onclick="runPreview(this)">▶ Run</button>` : ''}
-          <button class="code-btn" onclick="copyCode(this)">📋 Copy</button>
+          ${canRun ? `<button class="code-btn code-btn--run" data-action="run-preview">▶ Run</button>` : ''}
+          <button class="code-btn" data-action="copy-code">📋 Copy</button>
         </div>
       </div>
     `;
@@ -525,6 +536,24 @@ window.usePrompt = function(promptText) {
   D.input.dispatchEvent(new Event('input'));
   send();
 };
+
+// Delegated click handler for actions (enables strict CSP without 'unsafe-inline')
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const action = btn.getAttribute('data-action');
+  if (action === 'copy-msg') {
+    const id = btn.getAttribute('data-msg-id');
+    copyMsg(id, btn);
+  } else if (action === 'speak-msg') {
+    const id = btn.getAttribute('data-msg-id');
+    speakMsg(id, btn);
+  } else if (action === 'run-preview') {
+    runPreview(btn);
+  } else if (action === 'copy-code') {
+    copyCode(btn);
+  }
+});
 
 // ===== SPEECH TO TEXT (MIC) =====
 let recognition = null;
@@ -776,7 +805,7 @@ async function send() {
     // Replace stop button with copy button
     const actionsEl = aiRow.querySelector('.msg__actions');
     if (actionsEl) {
-      actionsEl.innerHTML = `<button class="msg-act-btn" onclick="copyMsg('${aiMsgId}')">📋 Copy</button>`;
+      actionsEl.innerHTML = `<button class="msg-act-btn" data-action="copy-msg" data-msg-id="${aiMsgId}">📋 Copy</button>`;
     }
 
   } catch (err) {
@@ -804,7 +833,7 @@ async function send() {
     // Replace stop with copy anyway
     const actionsEl = aiRow.querySelector('.msg__actions');
     if (actionsEl && fullText) {
-      actionsEl.innerHTML = `<button class="msg-act-btn" onclick="copyMsg('${aiMsgId}')">📋 Copy</button>`;
+      actionsEl.innerHTML = `<button class="msg-act-btn" data-action="copy-msg" data-msg-id="${aiMsgId}">📋 Copy</button>`;
     } else if (actionsEl) {
       actionsEl.innerHTML = '';
     }

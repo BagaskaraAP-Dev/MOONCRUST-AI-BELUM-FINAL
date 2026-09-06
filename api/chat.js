@@ -69,12 +69,22 @@ function checkMemoryRateLimit(ip) {
 }
 
 function getClientIp(req) {
+  // 1. Header resmi Vercel Edge (Anti-spoofing, diinjeksi oleh edge server Vercel)
+  const vercelIp = req.headers['x-vercel-forwarded-for'];
+  if (vercelIp) {
+    return String(vercelIp).split(',')[0].trim();
+  }
+  const realIp = req.headers['x-real-ip'];
+  if (realIp) {
+    return String(realIp).trim();
+  }
+  // 2. Fallback x-forwarded-for: ambil IP terakhir yang di-append proxy terpercaya
   const fwd = req.headers['x-forwarded-for'];
   if (fwd) {
-    return String(fwd).split(',')[0].trim();
+    const parts = String(fwd).split(',').map((s) => s.trim()).filter(Boolean);
+    return parts[parts.length - 1] || parts[0];
   }
   return (
-    req.headers['x-real-ip'] ||
     req.socket?.remoteAddress ||
     req.connection?.remoteAddress ||
     '127.0.0.1'
@@ -90,6 +100,9 @@ async function isRateLimited(req) {
       console.warn('[ratelimit] Upstash limit error, fallback to memory:', err.message);
       return checkMemoryRateLimit(ip);
     }
+  }
+  if (process.env.VERCEL || process.env.NODE_ENV === 'production') {
+    console.warn('[ratelimit] PERINGATAN: Upstash Redis belum dikonfigurasi di Vercel. In-memory fallback aktif.');
   }
   return checkMemoryRateLimit(ip);
 }
