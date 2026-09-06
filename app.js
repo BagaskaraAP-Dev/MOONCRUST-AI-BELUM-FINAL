@@ -209,7 +209,7 @@ function updateTopbarTitle() {
     if (topTitle) topTitle.innerHTML = `<span class="topbar__chat-text">${esc(c.title)}</span>`;
     if (editBtn) editBtn.style.display = 'inline-flex';
   } else {
-    if (topTitle) topTitle.innerHTML = `MOONCRUST <span class="badge-tag">AI</span>`;
+    if (topTitle) topTitle.textContent = 'MOONCRUST AI';
     if (editBtn) editBtn.style.display = 'none';
   }
 }

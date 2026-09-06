@@ -476,23 +476,18 @@ body {
 
 .topbar__title {
   font-weight: 700;
-  font-size: 14px;
-  letter-spacing: 0.3px;
+  font-size: 15px;
+  letter-spacing: 0.5px;
   display: inline-block;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   text-align: center;
-}
-.topbar__title span {
-  background: var(--grad);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: #ffffff;
 }
 .topbar__chat-text {
   color: var(--text) !important;
-  -webkit-text-fill-color: var(--text) !important;
   font-size: 13.5px;
   font-weight: 600;
 }
